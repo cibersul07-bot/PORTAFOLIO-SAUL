@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html, body { margin:0; padding:0; }
+  body { background:#F4F2ED; }
+  a { color:#B4531F; text-decoration:none; }
+  a:hover { color:#8C3E14; text-decoration:underline; }
+  input, textarea, button { font-family:inherit; }
+  ::selection { background:#F6D9A8; }
+</style>
+</helmet>
+<div style="display:flex; min-height:100vh; background:#F4F2ED; font-family:'Source Sans 3',system-ui,sans-serif; color:#16242B; -webkit-font-smoothing:antialiased">
+
+  <aside style="width:250px; flex:0 0 250px; background:#12303A; color:#E8EDEA; padding:26px 18px; display:flex; flex-direction:column; gap:28px; position:sticky; top:0; height:100vh; box-sizing:border-box">
+    <div style="display:flex; flex-direction:column; gap:6px">
+      <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.14em; color:#7FB0A8">CECATI 125</div>
+      <div style="font-family:'Archivo',sans-serif; font-weight:600; font-size:19px; line-height:1.2">Curso maestro<br>de horarios</div>
+      <div style="font-size:13px; color:#9DB8B4; line-height:1.35">Ing. Marcos Saúl Cantú Gámez<br>Ciclo 2026 – 2027</div>
+    </div>
+
+    <nav style="display:flex; flex-direction:column; gap:2px">
+      <sc-for list="{{ nav }}" as="n" hint-placeholder-count="5">
+        <button onClick="{{ n.go }}" style="display:flex; align-items:center; justify-content:space-between; gap:10px; text-align:left; border:0; cursor:pointer; padding:10px 12px; border-radius:7px; font-size:14.5px; font-weight:500; background:{{ n.bg }}; color:{{ n.fg }}">
+          <span>{{ n.label }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace; font-size:11.5px; opacity:0.7">{{ n.badge }}</span>
+        </button>
+      </sc-for>
+    </nav>
+
+    <div style="margin-top:auto; display:flex; flex-direction:column; gap:10px; border-top:1px solid #244A54; padding-top:16px">
+      <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.12em; color:#7FB0A8">FECHA DE TRABAJO</div>
+      <input type="date" value="{{ todayISO }}" onChange="{{ onDateInput }}" style="background:#0C242C; border:1px solid #2A5560; color:#E8EDEA; border-radius:6px; padding:7px 9px; font-size:13px; font-family:'IBM Plex Mono',monospace">
+      <div style="font-size:12.5px; color:#9DB8B4; line-height:1.4">{{ activeCount }} cursos activos · {{ totalStudents }} alumnos inscritos</div>
+    </div>
+  </aside>
+
+  <main style="flex:1; min-width:0; padding:30px 34px 60px; display:flex; flex-direction:column; gap:24px">
+
+    <header style="display:flex; align-items:flex-end; justify-content:space-between; gap:24px; flex-wrap:wrap; border-bottom:1px solid #DCD6C9; padding-bottom:16px">
+      <div style="display:flex; flex-direction:column; gap:5px; min-width:0">
+        <sc-if value="{{ inCourse }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ backToCourses }}" style="align-self:flex-start; background:none; border:0; padding:0; cursor:pointer; font-family:'IBM Plex Mono',monospace; font-size:11.5px; letter-spacing:0.1em; color:#B4531F">‹ TODOS LOS CURSOS</button>
+        </sc-if>
+        <h1 style="margin:0; font-family:'Archivo',sans-serif; font-weight:600; font-size:30px; letter-spacing:-0.01em; line-height:1.1; text-wrap:pretty">{{ headerTitle }}</h1>
+        <div style="font-size:14.5px; color:#5C6B70">{{ headerSub }}</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px">
+        <sc-if value="{{ showStepper }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:center; gap:6px">
+            <button onClick="{{ onPrev }}" style="width:34px; height:34px; border:1px solid #DCD6C9; background:#FFFDF8; border-radius:7px; cursor:pointer; font-size:15px; color:#16242B">‹</button>
+            <div style="font-family:'IBM Plex Mono',monospace; font-size:13px; min-width:172px; text-align:center; color:#16242B">{{ stepperLabel }}</div>
+            <button onClick="{{ onNext }}" style="width:34px; height:34px; border:1px solid #DCD6C9; background:#FFFDF8; border-radius:7px; cursor:pointer; font-size:15px; color:#16242B">›</button>
+          </div>
+        </sc-if>
+      </div>
+    </header>
+
+    <sc-if value="{{ viewHoy }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex; flex-direction:column; gap:26px">
+
+        <section style="display:flex; flex-direction:column; gap:12px">
+          <h2 style="margin:0; font-family:'Archivo',sans-serif; font-weight:600; font-size:15px; letter-spacing:0.06em; text-transform:uppercase; color:#5C6B70">Hoy · {{ todayLong }}</h2>
+          <sc-if value="{{ hasToday }}" hint-placeholder-val="{{ true }}">
+            <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px">
+              <sc-for list="{{ todaySessions }}" as="s" hint-placeholder-count="3">
+                <article style="background:#FFFDF8; border:1px solid #DCD6C9; border-radius:11px; padding:16px 18px; display:flex; flex-direction:column; gap:12px">
+                  <div style="display:flex; align-items:center; gap:9px">
+                    <span style="width:9px; height:9px; border-radius:50%; background:{{ s.color }}"></span>
+                    <span style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:500">{{ s.time }}</span>
+                    <span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.08em; color:#8A9498">{{ s.per }}</span>
+                  </div>
+                  <div style="font-family:'Archivo',sans-serif; font-weight:600; font-size:17.5px; line-height:1.25; text-wrap:pretty">{{ s.name }}</div>
+                  <div style="font-size:13.5px; color:#5C6B70">Sesión {{ s.nth }} de {{ s.total }} · {{ s.count }} alumnos</div>
+                  <div style="height:5px; background:#EDE8DD; border-radius:3px; overflow:hidden">
+                    <div style="height:100%; width:{{ s.pct }}%; background:{{ s.color }}"></div>
+                  </div>
+                  <div style="display:flex; gap:8px">
+                    <button onClick="{{ s.takeAtt }}" style="flex:1; border:0; cursor:pointer; background:#12303A; color:#F4F2ED; border-radius:7px; padding:9px 12px; font-size:13.5px; font-weight:600">Tomar asistencia</button>
+                    <button onClick="{{ s.open }}" style="border:1px solid #DCD6C9; cursor:pointer; background:#FFFDF8; color:#16242B; border-radius:7px; padding:9px 12px; font-size:13.5px">Ver curso</button>
+                  </div>
+                </article>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ noToday }}" hint-placeholder-val="{{ false }}">
+            <div style="background:#FFFDF8; border:1px dashed #DCD6C9; border-radius:11px; padding:22px; font-size:14.5px; color:#5C6B70">Sin clases programadas este día.</div>
+          </sc-if>
+        </section>
+
+        <section style="display:grid; grid-template-columns:1.15fr 1fr; gap:22px; align-items:start">
+          <div style="background:#FFFDF8; border:1px solid #DCD6C9; border-radius:11px; padding:18px 20px; display:flex; flex-direction:column; gap:14px">
+            <h2 style="margin:0; font-family:'Archivo',sans-serif; font-weight:600; font-size:15px; letter-spacing:0.06em; text-transform:uppercase; color:#5C6B70">Resto de la semana</h2>
+            <div style="display:flex; flex-direction:column; gap:2px">
+              <sc-for list="{{ weekAhead }}" as="d" hint-placeholder-count="5">
+                <div style="display:flex; gap:14px; padding:9px 0; border-top:1px solid #EDE8DD">
+                  <div style="width:92px; flex:0 0 92px; font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#5C6B70; padding-top:2px">{{ d.label }}</div>
+                  <div style="display:flex; flex-direction:column; gap:6px; min-width:0; flex:1">
+                    <sc-for list="{{ d.items }}" as="i" hint-placeholder-count="2">
+                      <div style="display:flex; gap:9px; align-items:baseline; font-size:14px">
+                        <span style="font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:{{ i.color }}; flex:0 0 46px">{{ i.time }}</span>
+                        <span style="min-width:0">{{ i.name }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:22px">
+            <div style="background:#FFFDF8; border:1px solid #DCD6C9; border-radius:11px; padding:18px 20px; display:flex; flex-direction:column; gap:13px">
+              <h2 style="margin:0; font-family:'Archivo',sans-serif; font-weight:600; font-size:15px; letter-spacing:0.06em; text-transform:uppercase; color:#5C6B70">Avance de temario</h2>
+              <sc-for list="{{ progressBars }}" as="p" hint-placeholder-count="4">
+                <button onClick="{{ p.open }}" style="text-align:left; background:none; border:0; padding:0; cursor:pointer; display:flex; flex-direction:column; gap:5px">
+                  <div style="display:flex; justify-content:space-between; gap:10px; font-size:13.5px">
+                    <span style="min-width:0">{{ p.name }}</span>
+                    <span style="font-family:'IBM Plex Mono',monospace; color:#5C6B70">{{ p.label }}</span>
+                  </div>
+                  <div style="height:5px; background:#EDE8DD; border-radius:3px; overflow:hidden">
+                    <div style="height:100%; width:{{ p.pct }}%; background:{{ p.color }}"></div>
+                  </div>
+                </button>
+              </sc-for>
+            </div>
+
+            <div style="background:#12303A; color:#E8EDEA; border-radius:11px; padding:18px 20px; display:flex; flex-direction:column; gap:12px">
+              <h2 style="margin:0; font-family:'Archivo',sans-serif; font-weight:600; font-size:15px; letter-spacing:0.06em; text-transform:uppercase; color:#7FB0A8">Próximos 30 días</h2>
+              <sc-for list="{{ upcoming }}" as="u" hint-placeholder-count="3">
+                <div style="display:flex; gap:11px; align-items:baseline; font-size:14px; border-top:1px solid #244A54; padding-top:9px">
+                  <span style="font-family:'IBM Plex Mono',monospace; font-size:11.5px; letter-spacing:0.06em; color:{{ u.tone }}; flex:0 0 78px">{{ u.kind }}</span>
+                  <span style="font-family:'IBM Plex Mono',monospace; font-size:12.5px; flex:0 0 48px; color:#9DB8B4">{{ u.date }}</span>
+                  <span style="min-width:0">{{ u.name }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </section>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ viewCursos }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; flex-direction:column; gap:16px">
+        <div style="display:flex; gap:7px; flex-wrap:wrap">
+          <sc-for list="{{ filters }}" as="f" hint-placeholder-count="6">
+            <button onClick="{{ f.go }}" style="border:1px solid {{ f.bd }}; background:{{ f.bg }}; color:{{ f.fg }}; cursor:pointer; border-radius:20px; padding:6px 14px; font-size:13px; font-weight:500">{{ f.label }}</button>
+          </sc-for>
+        </div>
+        <div style="background:#FFFDF8; border:1px solid #DCD6C9; border-radius:11px; overflow-x:auto; overflow-y:hidden">
+          <table style="width:100%; min-width:820px; border-collapse:collapse; font-size:14px">
+            <thead>
+              <tr style="background:#12303A; color:#E8EDEA; text-align:left">
+                <th style="padding:11px 14px; font-family:'Archivo',sans-serif; font-weight:600; font-size:12px; letter-spacing:0.07em; text-transform:uppercase">Curso</th>
+                <th style="padding:11px 10px; font-family:'Archivo',sans-serif; font-weight:600; font-size:12px; letter-spacing:0.07em; text-transform:uppercase">Inicio</th>
+                <th style="padding:11px 10px; font-family:'Archivo',sans-serif; font-weight:600; font-size:12px; letter-spacing:0.07em; text-transform:uppercase">Término</th>
+                <th style="padding:11px 10px; font-family:'Archivo',sans-serif; font-weight:600; font-size:12px; letter-spacing:0.07em; text-transform:uppercase">Horario</th>
+                <th style="padding:11px 10px; font-family:'Archivo',sans-serif; font-weight:600; font-size:12px; letter-spacing:0.07em; text-transform:uppercase">Hrs</th>
+                <th style="padding:11px 10px; font-family:'Archivo',sans-serif; font-weight:600; font-size:12px; letter-spacing:0.07em; text-transform:uppercase">Alum.</th>
+                <th style="padding:11px 10px; font-family:'Archivo',sans-serif; font-weight:600; font-size:12px; letter-spacing:0.07em; text-transform:uppercase">Avance</th>
+                <th style="padding:11px 14px; font-family:'Archivo',sans-serif; font-weight:600; font-size:12px; letter-spacing:0.07em; text-transform:uppercase">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ courseRows }}" as="c" hint-placeholder-count="10">
+                <tr onClick="{{ c.open }}" style="cursor:pointer; border-top:1px solid #EDE8DD; background:{{ c.rowBg }}">
+                  <td style="padding:11px 14px">
+                    <div style="display:flex; align-items:center; gap:10px">
+                      <span style="width:4px; height:26px; border-radius:2px; background:{{ c.color }}; flex:0 0 4px"></span>
+                      <div style="display:flex; flex-direction:column; gap:1px; min-width:0">
+                        <span style="font-weight:600">{{ c.name }}</span>
+                        <span style="font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#8A9498">{{ c.per }} · {{ c.dias }}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td style="padding:11px 10px; font-family:'IBM Plex Mono',monospace; font-size:13px">{{ c.ini }}</td>
+                  <td style="padding:11px 10px; font-family:'IBM Plex Mono',monospace; font-size:13px">{{ c.fin }}</td>
+                  <td style="padding:11px 10px; font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#5C6B70">{{ c.hora }}</td>
+                  <td style="padding:11px 10px; font-family:'IBM Plex Mono',monospace; font-size:13px">{{ c.horas }}</td>
+                  <td style="padding:11px 10px; font-family:'IBM Plex Mono',monospace; font-size:13px">{{ c.count }}</td>
+                  <td style="padding:11px 10px; width:110px">
+                    <div style="height:5px; background:#EDE8DD; border-radius:3px; overflow:hidden">
+                      <div style="height:100%; width:{{ c.pct }}%; background:{{ c.color }}"></div>
+                    </div>
+                  </td>
+                  <td style="padding:11px 14px">
+                    <span style="font-size:12px; font-weight:600; padding:3px 9px; border-radius:20px; background:{{ c.stBg }}; color:{{ c.stFg }}">{{ c.status }}</span>
+                  </td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ viewMes }}" hint-placeholder-val="{{ false }}">
+      <div style="background:#FFFDF8; border:1px solid #DCD6C9; border-radius:11px; overflow:hidden">
+        <div style="display:grid; grid-template-columns:repeat(7,1fr); background:#12303A">
+          <sc-for list="{{ dowLabels }}" as="d" hint-placeholder-count="7">
+            <div style="padding:9px 12px; color:#E8EDEA; font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.1em">{{ d }}</div>
+          </sc-for>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(7,1fr)">
+          <sc-for list="{{ monthCells }}" as="c" hint-placeholder-count="35">
+            <div style="min-height:104px; border-top:1px solid #EDE8DD; border-left:1px solid #EDE8DD; padding:7px 8px; display:flex; flex-direction:column; gap:4px; background:{{ c.bg }}">
+              <div style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:{{ c.numColor }}; font-weight:{{ c.numWeight }}">{{ c.day }}</div>
+              <sc-for list="{{ c.items }}" as="i" hint-placeholder-count="0">
+                <button onClick="{{ i.open }}" style="text-align:left; cursor:pointer; border:0; border-left:3px solid {{ i.color }}; background:{{ i.bg }}; border-radius:4px; padding:3px 5px; display:flex; flex-direction:column; gap:1px">
+                  <span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#5C6B70">{{ i.time }}</span>
+                  <span style="font-size:11.5px; line-height:1.2; color:#16242B">{{ i.short }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ viewSemana }}" hint-placeholder-val="{{ false }}">
+      <div style="background:#FFFDF8; border:1px solid #DCD6C9; border-radius:11px; padding:0 0 14px; overflow:hidden">
+        <div style="display:grid; grid-template-columns:64px repeat(6,1fr)">
+          <div style="background:#12303A"></div>
+          <sc-for list="{{ weekCols }}" as="w" hint-placeholder-count="6">
+            <div style="background:#12303A; color:#E8EDEA; padding:9px 12px; display:flex; flex-direction:column; gap:1px">
+              <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.1em; color:{{ w.tone }}">{{ w.dow }}</span>
+              <span style="font-family:'IBM Plex Mono',monospace; font-size:13px">{{ w.date }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:grid; grid-template-columns:64px repeat(6,1fr); position:relative">
+          <div style="display:flex; flex-direction:column">
+            <sc-for list="{{ hours }}" as="h" hint-placeholder-count="14">
+              <div style="height:46px; border-top:1px solid #EDE8DD; padding:2px 8px 0; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8A9498; text-align:right">{{ h }}</div>
+            </sc-for>
+          </div>
+          <sc-for list="{{ weekCols }}" as="w" hint-placeholder-count="6">
+            <div style="position:relative; border-left:1px solid #EDE8DD; background:{{ w.bg }}">
+              <sc-for list="{{ hours }}" as="h" hint-placeholder-count="14">
+                <div style="height:46px; border-top:1px solid #EDE8DD"></div>
+              </sc-for>
+              <sc-for list="{{ w.blocks }}" as="b" hint-placeholder-count="0">
+                <button onClick="{{ b.open }}" style="position:absolute; left:4px; right:4px; top:{{ b.top }}px; height:{{ b.h }}px; cursor:pointer; text-align:left; border:0; border-left:4px solid {{ b.color }}; background:{{ b.bg }}; border-radius:5px; padding:6px 8px; display:flex; flex-direction:column; gap:2px; overflow:hidden">
+                  <span style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#5C6B70">{{ b.time }}</span>
+                  <span style="font-size:12.5px; font-weight:600; line-height:1.2; color:#16242B">{{ b.name }}</span>
+                  <span style="font-size:11px; color:#5C6B70">{{ b.count }} alumnos</span>
+                </button>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ inCourse }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; flex-direction:column; gap:20px">
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px">
+          <sc-for list="{{ courseStats }}" as="s" hint-placeholder-count="5">
+            <div style="background:#FFFDF8; border:1px solid #DCD6C9; border-radius:10px; padding:13px 15px; display:flex; flex-direction:column; gap:3px">
+              <span style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:0.09em; color:#8A9498">{{ s.label }}</span>
+              <span style="font-family:'Archivo',sans-serif; font-weight:600; font-size:22px">{{ s.value }}</span>
+              <span style="font-size:12px; color:#5C6B70">{{ s.note }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display:flex; gap:4px; border-bottom:1px solid #DCD6C9; flex-wrap:wrap">
+          <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="5">
+            <button onClick="{{ t.go }}" style="border:0; border-bottom:2px solid {{ t.bd }}; background:none; cursor:pointer; padding:9px 14px; font-size:14px; font-weight:600; color:{{ t.fg }}">{{ t.label }}</button>
+          </sc-for>
+        </div>
+
+        <sc-if value="{{ tabAlumnos }}" hint-placeholder-val="{{ true }}">
+          <div style="background:#FFFDF8; border:1px solid #DCD6C9; border-radius:11px; overflow:hidden">
+            <table style="width:100%; border-collapse:collapse; font-size:14px">
+              <thead>
+                <tr style="background:#EDE8DD; text-align:left">
+                  <th style="padding:10px 14px; font-family:'Archivo',sans-serif; font-size:11.5px; letter-spacing:0.07em; text-transform:uppercase; color:#5C6B70">#</th>
+                  <th style="padding:10px 10px; font-family:'Archivo',sans-serif; font-size:11.5px; letter-spacing:0.07em; text-transform:uppercase; color:#5C6B70">Alumno</th>
+                  <th style="padding:10px 10px; font-family:'Archivo',sans-serif; font-size:11.5px; letter-spacing:0.07em; text-transform:uppercase; color:#5C6B70">Matrícula</th>
+                  <th style="padding:10px 10px; font-family:'Archivo',sans-serif; font-size:11.5px; letter-spacing:0.07em; text-transform:uppercase; color:#5C6B70">Teléfono</th>
+                  <th style="padding:10px 10px; font-family:'Archivo',sans-serif; font-size:11.5px; letter-spacing:0.07em; text-transform:uppercase; color:#5C6B70">Correo</th>
+                  <th style="padding:10px 10px; font-family:'Archivo',sans-serif; font-size:11.5px; letter-spacing:0.07em; text-transform:uppercase; color:#5C6B70">Asistencia</th>
+                  <th style="padding:10px 14px; font-family:'Archivo',sans-serif; font-size:11.5px; letter-spacing:0.07em; text-transform:uppercase; color:#5C6B70">Calif.</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ roster }}" as="r" hint-placeholder-count="14">
+                  <tr style="border-top:1px solid #EDE8DD">
+                    <td style="padding:9px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:#8A9498">{{ r.n }}</td>
+                    <td style="padding:9px 10px; font-weight:500">{{ r.name }}</td>
+                    <td style="padding:9px 10px; font-family:'IBM Plex Mono',monospace; font-size:12.5px">{{ r.mat }}</td>
+                    <td style="padding:9px 10px; font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#5C6B70">{{ r.tel }}</td>
+                    <td style="padding:9px 10px; font-size:13px; color:#5C6B70">{{ r.mail }}</td>
+                    <td style="padding:9px 10px">
+                      <span style="font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:500; color:{{ r.attColor }}">{{ r.attLabel }}</span>
+                    </td>
+                    <td style="padding:9px 14px; font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:500; color:{{ r.gradeColor }}">{{ r.gradeLabel }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+            <div style="display:flex; align-items:center; gap:10px; padding:12px 14px; border-top:1px solid #EDE8DD">
+              <input value="{{ newName }}" onChange="{{ onNewName }}" placeholder="Nombre del nuevo alumno" style="flex:1; border:1px solid #DCD6C9; border-radius:7px; padding:8px 11px; font-size:14px; background:#FFFDF8; color:#16242B">
+              <button onClick="{{ addStudent }}" style="border:0; cursor:pointer; background:#12303A; color:#F4F2ED; border-radius:7px; padding:9px 16px; font-size:13.5px; font-weight:600">Inscribir</button>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ tabAsistencia }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex; flex-direction:column; gap:14px">
+            <div style="display:flex; flex-direction:column; gap:8px">
+              <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.1em; color:#8A9498">SESIÓN</span>
+              <div style="display:flex; gap:6px; flex-wrap:wrap">
+                <sc-for list="{{ sessionChips }}" as="s" hint-placeholder-count="12">
+                  <button onClick="{{ s.go }}" style="border:1px solid {{ s.bd }}; background:{{ s.bg }}; color:{{ s.fg }}; cursor:pointer; border-radius:7px; padding:6px 10px; font-family:'IBM Plex Mono',monospace; font-size:12px">{{ s.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+            <div style="background:#FFFDF8; border:1px solid #DCD6C9; border-radius:11px; overflow:hidden">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:14px; padding:13px 16px; border-bottom:1px solid #EDE8DD">
+                <div style="font-family:'Archivo',sans-serif; font-weight:600; font-size:15px">{{ attHeader }}</div>
+                <div style="display:flex; gap:8px; align-items:center">
+                  <span style="font-size:13px; color:#5C6B70">{{ attSummary }}</span>
+                  <button onClick="{{ markAllPresent }}" style="border:1px solid #DCD6C9; background:#FFFDF8; cursor:pointer; border-radius:7px; padding:7px 12px; font-size:13px">Todos presentes</button>
+                </div>
+              </div>
+              <sc-for list="{{ roster }}" as="r" hint-placeholder-count="14">
+                <div style="display:flex; align-items:center; gap:12px; padding:9px 16px; border-top:1px solid #EDE8DD">
+                  <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#8A9498; flex:0 0 26px">{{ r.n }}</span>
+                  <span style="flex:1; min-width:0; font-size:14px; font-weight:500">{{ r.name }}</span>
+                  <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#8A9498; flex:0 0 88px">{{ r.mat }}</span>
+                  <div style="display:flex; gap:5px">
+                    <button onClick="{{ r.setP }}" style="cursor:pointer; border:1px solid {{ r.pBd }}; background:{{ r.pBg }}; color:{{ r.pFg }}; border-radius:6px; padding:6px 13px; font-size:12.5px; font-weight:600">Presente</button>
+                    <button onClick="{{ r.setR }}" style="cursor:pointer; border:1px solid {{ r.rBd }}; background:{{ r.rBg }}; color:{{ r.rFg }}; border-radius:6px; padding:6px 13px; font-size:12.5px; font-weight:600">Retardo</button>
+                    <button onClick="{{ r.setA }}" style="cursor:pointer; border:1px solid {{ r.aBd }}; background:{{ r.aBg }}; color:{{ r.aFg }}; border-radius:6px; padding:6px 13px; font-size:12.5px; font-weight:600">Falta</button>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ tabCalif }}" hint-placeholder-val="{{ false }}">
+          <div style="background:#FFFDF8; border:1px solid #DCD6C9; border-radius:11px; overflow:hidden">
+            <div style="display:flex; justify-content:space-between; padding:13px 16px; border-bottom:1px solid #EDE8DD">
+              <div style="font-family:'Archivo',sans-serif; font-weight:600; font-size:15px">Calificación final</div>
+              <div style="font-size:13.5px; color:#5C6B70">{{ gradeSummary }}</div>
+            </div>
+            <sc-for list="{{ roster }}" as="r" hint-placeholder-count="14">
+              <div style="display:flex; align-items:center; gap:14px; padding:8px 16px; border-top:1px solid #EDE8DD">
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#8A9498; flex:0 0 26px">{{ r.n }}</span>
+                <span style="flex:1; min-width:0; font-size:14px; font-weight:500">{{ r.name }}</span>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:{{ r.attColor }}; flex:0 0 96px">Asist. {{ r.attLabel }}</span>
+                <input value="{{ r.gradeValue }}" onChange="{{ r.onGrade }}" style="width:74px; text-align:center; border:1px solid #DCD6C9; border-radius:7px; padding:7px 8px; font-family:'IBM Plex Mono',monospace; font-size:14px; background:#FFFDF8; color:#16242B">
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ tabTemario }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid; grid-template-columns:1.3fr 1fr; gap:20px; align-items:start">
+            <div style="background:#FFFDF8; border:1px solid #DCD6C9; border-radius:11px; overflow:hidden">
+              <div style="padding:13px 16px; border-bottom:1px solid #EDE8DD; display:flex; justify-content:space-between; align-items:center">
+                <div style="font-family:'Archivo',sans-serif; font-weight:600; font-size:15px">Temario</div>
+                <div style="font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#5C6B70">{{ topicSummary }}</div>
+              </div>
+              <sc-for list="{{ topics }}" as="t" hint-placeholder-count="7">
+                <button onClick="{{ t.toggle }}" style="width:100%; text-align:left; cursor:pointer; border:0; border-top:1px solid #EDE8DD; background:{{ t.bg }}; display:flex; align-items:center; gap:12px; padding:11px 16px">
+                  <span style="width:19px; height:19px; flex:0 0 19px; border-radius:5px; border:1.5px solid {{ t.boxBd }}; background:{{ t.boxBg }}; color:#FFFDF8; font-size:12px; display:flex; align-items:center; justify-content:center">{{ t.check }}</span>
+                  <span style="font-size:14px; color:{{ t.fg }}; text-decoration:{{ t.deco }}">{{ t.label }}</span>
+                </button>
+              </sc-for>
+            </div>
+            <div style="background:#FFFDF8; border:1px solid #DCD6C9; border-radius:11px; padding:16px; display:flex; flex-direction:column; gap:10px">
+              <div style="font-family:'Archivo',sans-serif; font-weight:600; font-size:15px">Notas y pendientes</div>
+              <textarea value="{{ notesValue }}" onChange="{{ onNotes }}" placeholder="Material por preparar, alumnos a los que dar seguimiento, acuerdos con la dirección…" style="min-height:240px; resize:vertical; border:1px solid #DCD6C9; border-radius:8px; padding:11px 12px; font-size:14px; line-height:1.5; background:#FFFDF8; color:#16242B"></textarea>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ viewReportes }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; flex-direction:column; gap:18px">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px">
+          <sc-for list="{{ totals }}" as="t" hint-placeholder-count="4">
+            <div style="background:#12303A; color:#E8EDEA; border-radius:10px; padding:15px 17px; display:flex; flex-direction:column; gap:3px">
+              <span style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:0.09em; color:#7FB0A8">{{ t.label }}</span>
+              <span style="font-family:'Archivo',sans-serif; font-weight:600; font-size:24px">{{ t.value }}</span>
+              <span style="font-size:12px; color:#9DB8B4">{{ t.note }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="background:#FFFDF8; border:1px solid #DCD6C9; border-radius:11px; overflow-x:auto; overflow-y:hidden">
+          <table style="width:100%; min-width:860px; border-collapse:collapse; font-size:14px">
+            <thead>
+              <tr style="background:#12303A; color:#E8EDEA; text-align:left">
+                <th style="padding:11px 14px; font-family:'Archivo',sans-serif; font-size:11.5px; letter-spacing:0.07em; text-transform:uppercase">Curso</th>
+                <th style="padding:11px 10px; font-family:'Archivo',sans-serif; font-size:11.5px; letter-spacing:0.07em; text-transform:uppercase">Per</th>
+                <th style="padding:11px 10px; font-family:'Archivo',sans-serif; font-size:11.5px; letter-spacing:0.07em; text-transform:uppercase">Periodo</th>
+                <th style="padding:11px 10px; font-family:'Archivo',sans-serif; font-size:11.5px; letter-spacing:0.07em; text-transform:uppercase">Hrs</th>
+                <th style="padding:11px 10px; font-family:'Archivo',sans-serif; font-size:11.5px; letter-spacing:0.07em; text-transform:uppercase">Alum.</th>
+                <th style="padding:11px 10px; font-family:'Archivo',sans-serif; font-size:11.5px; letter-spacing:0.07em; text-transform:uppercase">Sesiones</th>
+                <th style="padding:11px 10px; font-family:'Archivo',sans-serif; font-size:11.5px; letter-spacing:0.07em; text-transform:uppercase">Asist. prom.</th>
+                <th style="padding:11px 14px; font-family:'Archivo',sans-serif; font-size:11.5px; letter-spacing:0.07em; text-transform:uppercase">Calif. prom.</th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ reportRows }}" as="r" hint-placeholder-count="10">
+                <tr style="border-top:1px solid #EDE8DD">
+                  <td style="padding:10px 14px">
+                    <div style="display:flex; align-items:center; gap:9px">
+                      <span style="width:4px; height:22px; border-radius:2px; background:{{ r.color }}; flex:0 0 4px"></span>
+                      <span style="font-weight:500">{{ r.name }}</span>
+                    </div>
+                  </td>
+                  <td style="padding:10px 10px; font-family:'IBM Plex Mono',monospace; font-size:12.5px">{{ r.per }}</td>
+                  <td style="padding:10px 10px; font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#5C6B70">{{ r.periodo }}</td>
+                  <td style="padding:10px 10px; font-family:'IBM Plex Mono',monospace; font-size:13px">{{ r.horas }}</td>
+                  <td style="padding:10px 10px; font-family:'IBM Plex Mono',monospace; font-size:13px">{{ r.count }}</td>
+                  <td style="padding:10px 10px; font-family:'IBM Plex Mono',monospace; font-size:13px; color:#5C6B70">{{ r.sesiones }}</td>
+                  <td style="padding:10px 10px; font-family:'IBM Plex Mono',monospace; font-size:13px; color:{{ r.attColor }}">{{ r.asistencia }}</td>
+                  <td style="padding:10px 14px; font-family:'IBM Plex Mono',monospace; font-size:13px">{{ r.calif }}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+        <div style="font-size:12.5px; color:#8A9498; line-height:1.5">Asistencia y calificaciones de sesiones ya cursadas al {{ todayLong }}. Los cursos que aún no inician aparecen sin registro.</div>
+      </div>
+    </sc-if>
+
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{}">
+class Component extends DCLogic {
+  static RAW = [
+    ["WORD PROFESIONAL","2026-08-31","2026-10-16",60,20,"1ERO","15:00 A 18:00, LUN,MIE,VIER"],
+    ["EXCEL DASHBOARDS","2026-08-31","2026-09-28",60,20,"1ERO","18:00 a 21:00, L-V"],
+    ["PROGRAMACION PYTHON (BASICO)","2026-09-01","2026-10-22",48,16,"1ERO","15:00 A 18:00, MART y JUEV"],
+    ["Fundamentos de Inteligencia Artificial","2026-09-05","2026-10-24",40,8,"1ERO","8:00 a 13:00, SABADO"],
+    ["POWER BI BASICO","2026-09-29","2026-10-26",60,20,"1ERO","18:00 a 21:00, L-V"],
+    ["EXCEL BASICO","2026-10-19","2026-12-04",60,20,"1ERO","15:00 A 18:00, LUN,MIE,VIER"],
+    ["CLASSROOM Y FORMS","2026-10-27","2026-12-17",48,16,"2DO","15:00 A 18:00, MART y JUEV"],
+    ["POWER BI INTERMEDIO","2026-10-27","2026-11-24",60,20,"2DO","18:00 a 21:00, L-V"],
+    ["ChatGPT Profesional","2026-10-31","2026-12-19",40,8,"2DO","8:00 a 13:00, SABADO"],
+    ["DASHBOARDS INSTITUCIONALES","2026-11-25","2027-01-05",60,20,"2DO","18:00 a 21:00, L-V"],
+    ["EXCEL INTERMEDIO","2026-12-07","2027-02-05",60,20,"2DO","15:00 A 18:00, LUN,MIE,VIER"],
+    ["NOTBOOK LM","2027-01-05","2027-02-25",48,16,"3ERO","15:00 A 18:00, MART y JUEV"],
+    ["IA PARA DOCENTES","2027-01-06","2027-02-03",60,20,"3ERO","18:00 a 21:00, L-V"],
+    ["Automatización con IA","2027-01-09","2027-02-27",40,8,"2DO","8:00 a 13:00, SABADO"],
+    ["CANVA E IA","2027-02-04","2027-03-03",60,20,"3ERO","18:00 a 21:00, L-V"],
+    ["EXCEL AVANZADO","2027-02-08","2027-03-19",51,17,"3ERO","15:00 A 18:00, LUN,MIE,VIER"],
+    ["GOOGLE Y FAMILIA","2027-03-02","2027-05-06",48,16,"4TO","15:00 A 18:00, MART y JUEV"],
+    ["MARKETING DIGITAL CON IA","2027-03-04","2027-04-15",60,20,"3ERO","18:00 a 21:00, L-V"],
+    ["Agentes Inteligentes","2027-03-06","2027-05-22",40,8,"3ERO","8:00 a 13:00, SABADO"],
+    ["POWER POINT PROFESIONAL","2027-04-05","2027-05-21",60,20,"4TO","15:00 A 18:00, LUN,MIE,VIER"],
+    ["CREACION DE CONTENIDO IA","2027-04-16","2027-05-14",60,20,"4TO","18:00 a 21:00, L-V"],
+    ["GOOGLE Y FAMILIA","2027-05-11","2027-07-08",54,18,"4TO","15:00 A 18:00, MART y JUEV"],
+    ["ANALISIS DE DATOS CON IA","2027-05-17","2027-06-11",60,20,"4TO","18:00 a 21:00, L-V"],
+    ["OUTLOOK Y PRODUCTIVIDAD","2027-05-24","2027-07-09",57,19,"4TO","15:00 A 18:00, LUN,MIE,VIER"],
+    ["GOOGLE Y FAMILIA","2027-05-29","2027-07-03",30,6,"4TO","8:00 a 13:00, SABADO"],
+    ["TRANSFORMACION DIGITAL","2027-06-14","2027-07-09",60,20,"4TO","18:00 a 21:00, L-V"]
+  ];
+  static FIRST = ["Ana","Luis","María","José","Carmen","Miguel","Sofía","Jorge","Diana","Ricardo","Paola","Fernando","Alejandra","Óscar","Claudia","Raúl","Gabriela","Héctor","Mónica","Sergio","Lucía","Iván","Rosa","Daniel","Verónica","Arturo","Patricia","Rubén","Elena","Javier","Nancy","Emilio","Karla","Alfonso","Brenda","Guillermo","Adriana","Cristian","Fabiola","Enrique","Marisol","Roberto","Yolanda","Salvador"];
+  static LAST = ["Cantú","Garza","Treviño","Hernández","Ramírez","Salinas","Villarreal","Zamora","Elizondo","Guerrero","Mendoza","Reyes","Vega","Ibarra","Solís","Alanís","Ochoa","Barrera","Peña","Cavazos","Rodríguez","Domínguez","Escobar","Nájera","Quiroga","Sáenz","Tamez","Urbina","Molina","Lozano"];
+  static TOPICS = ["Encuadre y evaluación diagnóstica","Entorno de trabajo y configuración","Fundamentos y conceptos clave","Práctica guiada I","Práctica guiada II","Caso aplicado al puesto de trabajo","Proyecto integrador","Evaluación final y entrega de constancias"];
+
+  constructor(props) {
+    super(props);
+    const rnd = this.mk(20260831);
+    this.courses = Component.RAW.map((r, i) => {
+      const hora = r[6];
+      const dias = this.parseDias(hora);
+      const [sh, eh] = this.parseHoras(hora);
+      const band = sh < 12 ? "sab" : sh < 17 ? "tarde" : "noche";
+      return { id: i, name: r[0], ini: r[1], fin: r[2], horas: r[3], nDias: r[4], per: r[5], hora,
+        dias, sh, eh, band, color: { sab:"#B4531F", tarde:"#1F6F6B", noche:"#3B4E8C" }[band],
+        soft: { sab:"#F7E7DA", tarde:"#DFEEEB", noche:"#E2E6F4" }[band],
+        diasLabel: hora.split(", ").slice(1).join(", ") || hora,
+        timeLabel: sh + ":00–" + eh + ":00" };
+    });
+    this.rosters = {};
+    this.courses.forEach(c => {
+      const n = 14 + Math.floor(rnd() * 9);
+      const list = [];
+      for (let i = 0; i < n; i++) {
+        const fn = Component.FIRST[Math.floor(rnd() * Component.FIRST.length)];
+        const l1 = Component.LAST[Math.floor(rnd() * Component.LAST.length)];
+        const l2 = Component.LAST[Math.floor(rnd() * Component.LAST.length)];
+        const num = 1000 + Math.floor(rnd() * 8999);
+        list.push({ id: c.id + "-" + i, name: fn + " " + l1 + " " + l2,
+          mat: "26C-" + num,
+          tel: "899 " + (100 + Math.floor(rnd() * 899)) + " " + (1000 + Math.floor(rnd() * 8999)),
+          mail: (fn.toLowerCase().normalize("NFD").replace(/[^a-z]/g, "")) + "." + l1.toLowerCase().normalize("NFD").replace(/[^a-z]/g, "") + "@cecati125.mx",
+          base: 0.72 + rnd() * 0.28, g: 62 + Math.floor(rnd() * 39) });
+      }
+      this.rosters[c.id] = list;
+    });
+    const marks = {}, grades = {};
+    const today = "2026-09-08";
+    this.courses.forEach(c => {
+      const ss = this.sessions(c).filter(d => d < today);
+      this.rosters[c.id].forEach(s => {
+        ss.forEach(d => {
+          const r = this.mk(c.id * 7919 + d.charCodeAt(9) * 131 + s.id.length * 17 + d.charCodeAt(8) * 7)();
+          marks[c.id + "|" + d + "|" + s.id] = r < s.base ? "P" : r < s.base + 0.09 ? "R" : "A";
+        });
+        if (ss.length) grades[c.id + "|" + s.id] = String(s.g);
+      });
+    });
+    this.state = { view: "hoy", today, anchor: today, courseId: null, tab: "alumnos",
+      filter: "Todos", attDate: {}, marks, grades, topics: {}, notes: {}, newName: "", extra: {} };
+  }
+
+  mk(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  parseDias(h) { const s = h.toUpperCase(); if (s.indexOf("SABADO") >= 0) return [6]; if (s.indexOf("MART") >= 0) return [2, 4]; if (s.indexOf("LUN,MIE") >= 0) return [1, 3, 5]; return [1, 2, 3, 4, 5]; }
+  parseHoras(h) { const m = h.match(/(\d{1,2}):00\s*[Aa]\s*(\d{1,2}):00/); return m ? [+m[1], +m[2]] : [15, 18]; }
+  d(iso) { const p = iso.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  iso(dt) { const m = dt.getMonth() + 1, d = dt.getDate(); return dt.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (d < 10 ? "0" : "") + d; }
+  add(iso, n) { const dt = this.d(iso); dt.setDate(dt.getDate() + n); return this.iso(dt); }
+  dow(iso) { const w = this.d(iso).getDay(); return w === 0 ? 7 : w; }
+  short(iso) { const p = iso.split("-"); return p[2] + "/" + p[1]; }
+  long(iso) { const dt = this.d(iso); const D = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"], M = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]; return D[dt.getDay()] + " " + dt.getDate() + " de " + M[dt.getMonth()] + " " + dt.getFullYear(); }
+  sessions(c) {
+    if (!this._ss) this._ss = {};
+    if (this._ss[c.id]) return this._ss[c.id];
+    const out = []; let cur = c.ini;
+    while (cur <= c.fin) { if (c.dias.indexOf(this.dow(cur)) >= 0) out.push(cur); cur = this.add(cur, 1); }
+    this._ss[c.id] = out; return out;
+  }
+  sessionsOn(iso) { return this.courses.filter(c => iso >= c.ini && iso <= c.fin && c.dias.indexOf(this.dow(iso)) >= 0).sort((a, b) => a.sh - b.sh); }
+  monday(iso) { return this.add(iso, -(this.dow(iso) - 1)); }
+  roster(cid) { return this.rosters[cid].concat(this.state.extra[cid] || []); }
+  topicsDone(cid) { const t = this.state.topics[cid]; return t ? Object.keys(t).filter(k => t[k]).length : 0; }
+  autoPct(c) { const ss = this.sessions(c); const done = ss.filter(d => d <= this.state.today).length; return ss.length ? Math.round(done / ss.length * 100) : 0; }
+  attPct(cid, sid) {
+    const ss = this.sessions(this.courses[cid]); let rec = 0, ok = 0;
+    ss.forEach(d => { const m = this.state.marks[cid + "|" + d + "|" + sid]; if (m) { rec++; if (m !== "A") ok++; } });
+    return rec ? Math.round(ok / rec * 100) : null;
+  }
+  go(view) { return () => this.setState({ view, courseId: null }); }
+  open(cid, tab) { return () => this.setState({ view: "curso", courseId: cid, tab: tab || "alumnos" }); }
+  btn(active, color) { return active ? { bg: color, fg: "#FFFDF8", bd: color } : { bg: "#FFFDF8", fg: "#5C6B70", bd: "#DCD6C9" }; }
+
+  renderVals() {
+    const S = this.state, today = S.today;
+    const activeCourses = this.courses.filter(c => today >= c.ini && today <= c.fin);
+    const nav = [
+      { k: "hoy", label: "Hoy", badge: String(this.sessionsOn(today).length) },
+      { k: "cursos", label: "Cursos", badge: String(this.courses.length) },
+      { k: "mes", label: "Calendario mensual", badge: "" },
+      { k: "semana", label: "Semana por horario", badge: "" },
+      { k: "reportes", label: "Reportes", badge: "" }
+    ].map(n => ({ label: n.label, badge: n.badge, go: this.go(n.k),
+      bg: S.view === n.k ? "#1E4C57" : "transparent", fg: S.view === n.k ? "#FFFDF8" : "#9DB8B4" }));
+
+    const vals = { nav, todayISO: today, todayLong: this.long(today),
+      activeCount: activeCourses.length,
+      totalStudents: this.courses.reduce((a, c) => a + this.roster(c.id).length, 0),
+      onDateInput: e => { const v = e.target.value; if (v) this.setState({ today: v, anchor: v }); },
+      viewHoy: S.view === "hoy", viewCursos: S.view === "cursos", viewMes: S.view === "mes",
+      viewSemana: S.view === "semana", viewReportes: S.view === "reportes", inCourse: S.view === "curso",
+      backToCourses: this.go("cursos"),
+      dowLabels: ["LUN","MAR","MIÉ","JUE","VIE","SÁB","DOM"], hours: [] };
+    for (let h = 8; h <= 21; h++) vals.hours.push(h + ":00");
+
+    // header
+    const M = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+    if (S.view === "curso") {
+      const c = this.courses[S.courseId];
+      vals.headerTitle = c.name;
+      vals.headerSub = this.short(c.ini) + " al " + this.short(c.fin) + " · " + c.hora + " · " + c.horas + " horas · " + c.per + " periodo";
+      vals.showStepper = false; vals.stepperLabel = "";
+    } else if (S.view === "mes") {
+      vals.headerTitle = "Calendario mensual";
+      vals.headerSub = "Todas las sesiones programadas del ciclo";
+      vals.showStepper = true;
+      vals.stepperLabel = M[this.d(S.anchor).getMonth()] + " " + this.d(S.anchor).getFullYear();
+      vals.onPrev = () => { const dt = this.d(S.anchor); dt.setMonth(dt.getMonth() - 1); this.setState({ anchor: this.iso(dt) }); };
+      vals.onNext = () => { const dt = this.d(S.anchor); dt.setMonth(dt.getMonth() + 1); this.setState({ anchor: this.iso(dt) }); };
+    } else if (S.view === "semana") {
+      const mon = this.monday(S.anchor);
+      vals.headerTitle = "Semana por horario";
+      vals.headerSub = "Lunes a sábado, 8:00 a 21:00";
+      vals.showStepper = true;
+      vals.stepperLabel = this.short(mon) + " – " + this.short(this.add(mon, 5));
+      vals.onPrev = () => this.setState({ anchor: this.add(S.anchor, -7) });
+      vals.onNext = () => this.setState({ anchor: this.add(S.anchor, 7) });
+    } else if (S.view === "hoy") {
+      vals.headerTitle = "Buen día, maestro";
+      vals.headerSub = this.long(today);
+      vals.showStepper = true;
+      vals.stepperLabel = this.short(today);
+      vals.onPrev = () => { const v = this.add(today, -1); this.setState({ today: v, anchor: v }); };
+      vals.onNext = () => { const v = this.add(today, 1); this.setState({ today: v, anchor: v }); };
+    } else if (S.view === "cursos") {
+      vals.headerTitle = "Cursos del ciclo";
+      vals.headerSub = this.courses.length + " cursos programados de agosto 2026 a julio 2027";
+      vals.showStepper = false; vals.stepperLabel = "";
+    } else {
+      vals.headerTitle = "Reportes";
+      vals.headerSub = "Resumen por curso para entregar a la dirección";
+      vals.showStepper = false; vals.stepperLabel = "";
+    }
+
+    // HOY
+    const ts = this.sessionsOn(today);
+    vals.hasToday = ts.length > 0; vals.noToday = ts.length === 0;
+    vals.todaySessions = ts.map(c => {
+      const ss = this.sessions(c);
+      return { name: c.name, time: c.timeLabel, per: c.per + " PER", color: c.color,
+        nth: ss.indexOf(today) + 1, total: ss.length, count: this.roster(c.id).length,
+        pct: this.autoPct(c), open: this.open(c.id), takeAtt: () => this.setState({ view: "curso", courseId: c.id, tab: "asistencia", attDate: Object.assign({}, S.attDate, { [c.id]: today }) }) };
+    });
+    vals.weekAhead = [1, 2, 3, 4, 5, 6].map(n => {
+      const iso = this.add(today, n);
+      return { label: this.long(iso).split(" ").slice(0, 3).join(" ").replace(" de", ""),
+        items: this.sessionsOn(iso).map(c => ({ name: c.name, time: c.sh + ":00", color: c.color })) };
+    }).filter(d => d.items.length);
+    vals.progressBars = activeCourses.map(c => {
+      const done = this.topicsDone(c.id);
+      return { name: c.name, pct: Math.round(done / Component.TOPICS.length * 100),
+        label: done + "/" + Component.TOPICS.length + " temas", color: c.color, open: this.open(c.id, "temario") };
+    });
+    const horizon = this.add(today, 30);
+    vals.upcoming = this.courses.flatMap(c => {
+      const out = [];
+      if (c.ini > today && c.ini <= horizon) out.push({ kind: "INICIA", tone: "#8FD0C6", date: this.short(c.ini), name: c.name, s: c.ini });
+      if (c.fin > today && c.fin <= horizon) out.push({ kind: "TERMINA", tone: "#E9A97C", date: this.short(c.fin), name: c.name, s: c.fin });
+      return out;
+    }).sort((a, b) => a.s < b.s ? -1 : 1).slice(0, 7);
+
+    // CURSOS
+    const periods = ["Todos", "Activos", "1ERO", "2DO", "3ERO", "4TO"];
+    vals.filters = periods.map(p => {
+      const a = S.filter === p;
+      return { label: p, go: () => this.setState({ filter: p }),
+        bg: a ? "#12303A" : "#FFFDF8", fg: a ? "#F4F2ED" : "#5C6B70", bd: a ? "#12303A" : "#DCD6C9" };
+    });
+    vals.courseRows = this.courses.filter(c => S.filter === "Todos" || (S.filter === "Activos" ? today >= c.ini && today <= c.fin : c.per === S.filter)).map(c => {
+      const on = today >= c.ini && today <= c.fin, done = today > c.fin;
+      return { name: c.name, per: c.per, dias: c.diasLabel, ini: this.short(c.ini), fin: this.short(c.fin),
+        hora: c.timeLabel, horas: c.horas, count: this.roster(c.id).length, pct: this.autoPct(c),
+        color: c.color, rowBg: on ? "#FBF7EE" : "#FFFDF8",
+        status: done ? "Concluido" : on ? "En curso" : "Por iniciar",
+        stBg: done ? "#EDE8DD" : on ? "#DFEEEB" : "#F7E7DA",
+        stFg: done ? "#5C6B70" : on ? "#1F6F6B" : "#B4531F", open: this.open(c.id) };
+    });
+
+    // MES
+    const first = this.d(S.anchor); first.setDate(1);
+    const gridStart = this.monday(this.iso(first));
+    vals.monthCells = [];
+    for (let i = 0; i < 42; i++) {
+      const iso = this.add(gridStart, i);
+      const inM = this.d(iso).getMonth() === first.getMonth();
+      const isT = iso === today;
+      vals.monthCells.push({ day: this.d(iso).getDate(), bg: isT ? "#FBF3E3" : inM ? "#FFFDF8" : "#F7F4EC",
+        numColor: isT ? "#B4531F" : inM ? "#16242B" : "#B9B3A6", numWeight: isT ? "700" : "400",
+        items: inM ? this.sessionsOn(iso).map(c => ({ short: c.name.length > 26 ? c.name.slice(0, 24) + "…" : c.name,
+          time: c.sh + ":00", color: c.color, bg: c.soft, open: this.open(c.id) })) : [] });
+    }
+
+    // SEMANA
+    const mon = this.monday(S.anchor);
+    vals.weekCols = [0, 1, 2, 3, 4, 5].map(n => {
+      const iso = this.add(mon, n);
+      const D = ["LUN","MAR","MIÉ","JUE","VIE","SÁB"];
+      return { dow: D[n], date: this.short(iso), tone: iso === today ? "#E9A97C" : "#7FB0A8",
+        bg: iso === today ? "#FBF3E3" : "#FFFDF8",
+        blocks: this.sessionsOn(iso).map(c => ({ name: c.name, time: c.timeLabel, color: c.color, bg: c.soft,
+          count: this.roster(c.id).length, top: (c.sh - 8) * 46, h: (c.eh - c.sh) * 46 - 4, open: this.open(c.id) })) };
+    });
+
+    // CURSO
+    if (S.view === "curso" && S.courseId != null) {
+      const c = this.courses[S.courseId], cid = c.id, ss = this.sessions(c);
+      const roster = this.roster(cid);
+      const attDate = S.attDate[cid] || ss.filter(d => d <= today).slice(-1)[0] || ss[0];
+      const done = ss.filter(d => d <= today).length;
+      const pcts = roster.map(s => this.attPct(cid, s.id)).filter(v => v !== null);
+      const gs = roster.map(s => parseFloat(S.grades[cid + "|" + s.id])).filter(v => !isNaN(v));
+      vals.courseStats = [
+        { label: "ALUMNOS", value: String(roster.length), note: "inscritos" },
+        { label: "SESIONES", value: done + "/" + ss.length, note: "cursadas" },
+        { label: "ASISTENCIA", value: pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) + "%" : "—", note: "promedio del grupo" },
+        { label: "CALIFICACIÓN", value: gs.length ? (gs.reduce((a, b) => a + b, 0) / gs.length).toFixed(1) : "—", note: "promedio del grupo" },
+        { label: "TEMARIO", value: this.topicsDone(cid) + "/" + Component.TOPICS.length, note: "temas cubiertos" }
+      ];
+      vals.tabs = [["alumnos","Alumnos"],["asistencia","Asistencia"],["calificaciones","Calificaciones"],["temario","Temario y notas"]].map(t => ({
+        label: t[1], go: () => this.setState({ tab: t[0] }),
+        bd: S.tab === t[0] ? c.color : "transparent", fg: S.tab === t[0] ? "#16242B" : "#8A9498" }));
+      vals.tabAlumnos = S.tab === "alumnos"; vals.tabAsistencia = S.tab === "asistencia";
+      vals.tabCalif = S.tab === "calificaciones"; vals.tabTemario = S.tab === "temario";
+
+      vals.roster = roster.map((s, i) => {
+        const pct = this.attPct(cid, s.id);
+        const mk = S.marks[cid + "|" + attDate + "|" + s.id];
+        const gv = S.grades[cid + "|" + s.id] || "";
+        const gnum = parseFloat(gv);
+        const p = this.btn(mk === "P", "#1F6F6B"), r = this.btn(mk === "R", "#B4531F"), a = this.btn(mk === "A", "#9E3131");
+        return { n: i + 1, name: s.name, mat: s.mat, tel: s.tel, mail: s.mail,
+          attLabel: pct === null ? "—" : pct + "%", attColor: pct === null ? "#B9B3A6" : pct >= 85 ? "#1F6F6B" : pct >= 70 ? "#B4531F" : "#9E3131",
+          gradeLabel: gv || "—", gradeValue: gv,
+          gradeColor: isNaN(gnum) ? "#B9B3A6" : gnum >= 70 ? "#16242B" : "#9E3131",
+          onGrade: e => this.setState({ grades: Object.assign({}, this.state.grades, { [cid + "|" + s.id]: e.target.value }) }),
+          setP: () => this.setState({ marks: Object.assign({}, this.state.marks, { [cid + "|" + attDate + "|" + s.id]: "P" }) }),
+          setR: () => this.setState({ marks: Object.assign({}, this.state.marks, { [cid + "|" + attDate + "|" + s.id]: "R" }) }),
+          setA: () => this.setState({ marks: Object.assign({}, this.state.marks, { [cid + "|" + attDate + "|" + s.id]: "A" }) }),
+          pBg: p.bg, pFg: p.fg, pBd: p.bd, rBg: r.bg, rFg: r.fg, rBd: r.bd, aBg: a.bg, aFg: a.fg, aBd: a.bd };
+      });
+      vals.sessionChips = ss.map((dts, i) => {
+        const sel = dts === attDate;
+        return { label: this.short(dts), go: () => this.setState({ attDate: Object.assign({}, this.state.attDate, { [cid]: dts }) }),
+          bg: sel ? c.color : dts <= today ? "#FFFDF8" : "#F7F4EC", fg: sel ? "#FFFDF8" : dts <= today ? "#16242B" : "#B9B3A6",
+          bd: sel ? c.color : "#DCD6C9" };
+      });
+      const marksToday = roster.map(s => S.marks[cid + "|" + attDate + "|" + s.id]);
+      vals.attHeader = "Sesión del " + this.long(attDate);
+      vals.attSummary = marksToday.filter(m => m === "P").length + " presentes · " + marksToday.filter(m => m === "R").length + " retardos · " + marksToday.filter(m => m === "A").length + " faltas";
+      vals.markAllPresent = () => { const m = Object.assign({}, this.state.marks); roster.forEach(s => { m[cid + "|" + attDate + "|" + s.id] = "P"; }); this.setState({ marks: m }); };
+      vals.gradeSummary = gs.length ? "Promedio " + (gs.reduce((a, b) => a + b, 0) / gs.length).toFixed(1) + " · " + gs.filter(v => v >= 70).length + " de " + roster.length + " aprobados" : "Sin calificaciones capturadas";
+      vals.topics = Component.TOPICS.map((t, i) => {
+        const on = !!(S.topics[cid] && S.topics[cid][i]);
+        return { label: t, check: on ? "✓" : "", bg: on ? "#FBF7EE" : "#FFFDF8",
+          boxBd: on ? c.color : "#C9C2B3", boxBg: on ? c.color : "transparent",
+          fg: on ? "#5C6B70" : "#16242B", deco: on ? "line-through" : "none",
+          toggle: () => { const cur = Object.assign({}, this.state.topics[cid] || {}); cur[i] = !cur[i];
+            this.setState({ topics: Object.assign({}, this.state.topics, { [cid]: cur }) }); } };
+      });
+      vals.topicSummary = this.topicsDone(cid) + " de " + Component.TOPICS.length + " cubiertos";
+      vals.notesValue = S.notes[cid] || "";
+      vals.onNotes = e => this.setState({ notes: Object.assign({}, this.state.notes, { [cid]: e.target.value }) });
+      vals.newName = S.newName;
+      vals.onNewName = e => this.setState({ newName: e.target.value });
+      vals.addStudent = () => {
+        const nm = this.state.newName.trim(); if (!nm) return;
+        const ex = Object.assign({}, this.state.extra);
+        const list = (ex[cid] || []).slice();
+        list.push({ id: cid + "-x" + list.length, name: nm, mat: "26C-" + (9000 + list.length), tel: "—", mail: "—", base: 1, g: 0 });
+        ex[cid] = list; this.setState({ extra: ex, newName: "" });
+      };
+    } else {
+      vals.courseStats = []; vals.tabs = []; vals.roster = []; vals.sessionChips = []; vals.topics = [];
+      vals.tabAlumnos = false; vals.tabAsistencia = false; vals.tabCalif = false; vals.tabTemario = false;
+      vals.attHeader = ""; vals.attSummary = ""; vals.gradeSummary = ""; vals.topicSummary = "";
+      vals.notesValue = ""; vals.newName = "";
+    }
+
+    // REPORTES
+    let totalAtt = [], totalG = [];
+    vals.reportRows = this.courses.map(c => {
+      const roster = this.roster(c.id), ss = this.sessions(c);
+      const pcts = roster.map(s => this.attPct(c.id, s.id)).filter(v => v !== null);
+      const gs = roster.map(s => parseFloat(S.grades[c.id + "|" + s.id])).filter(v => !isNaN(v));
+      const ap = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
+      if (ap !== null) totalAtt.push(ap);
+      gs.forEach(v => totalG.push(v));
+      return { name: c.name, per: c.per, periodo: this.short(c.ini) + "–" + this.short(c.fin), horas: c.horas,
+        count: roster.length, color: c.color,
+        sesiones: ss.filter(d => d <= today).length + "/" + ss.length,
+        asistencia: ap === null ? "—" : ap + "%",
+        attColor: ap === null ? "#B9B3A6" : ap >= 85 ? "#1F6F6B" : "#B4531F",
+        calif: gs.length ? (gs.reduce((a, b) => a + b, 0) / gs.length).toFixed(1) : "—" };
+    });
+    vals.totals = [
+      { label: "CURSOS EN EL CICLO", value: String(this.courses.length), note: "ago 2026 – jul 2027" },
+      { label: "HORAS PROGRAMADAS", value: String(this.courses.reduce((a, c) => a + c.horas, 0)), note: "frente a grupo" },
+      { label: "ALUMNOS ATENDIDOS", value: String(vals.totalStudents), note: "inscripciones del ciclo" },
+      { label: "ASISTENCIA GLOBAL", value: totalAtt.length ? Math.round(totalAtt.reduce((a, b) => a + b, 0) / totalAtt.length) + "%" : "—", note: totalAtt.length + " cursos con registro" }
+    ];
+    return vals;
+  }
+}
+</script>
+</body>
+</html>

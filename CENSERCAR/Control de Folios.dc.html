@@ -1,0 +1,1364 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#f2f5f9;color:#1f2937;font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;line-height:1.5}
+  a{color:#2563eb;text-decoration:none}
+  a:hover{color:#0f2a43}
+  ::-webkit-scrollbar{height:9px;width:9px}
+  ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:6px}
+  @media print{
+    .no-print{display:none !important}
+    body{background:#fff}
+    .sheet{box-shadow:none !important;border-color:#d8e0ea !important;break-inside:avoid}
+  }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#f2f5f9">
+
+  <header style="background:linear-gradient(135deg,#0f2a43,#143a5c);color:#fff;padding:26px 0 22px">
+    <div style="max-width:1240px;margin:0 auto;padding:0 24px;display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;justify-content:space-between">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#9fc3e8;font-weight:600">Censercar · Central de Servicios de Carga</div>
+        <h1 style="font-size:27px;font-weight:700;letter-spacing:-.3px">Control &amp; Auditoría de Folios</h1>
+        <div style="color:#8fb4d8;font-size:12.5px">{{ meta }}</div>
+      </div>
+      <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onClick="{{ imprimir }}" style="font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.08);color:#e6f0fa;cursor:pointer;font-family:inherit" style-hover="background:rgba(255,255,255,.18)">Imprimir / PDF</button>
+        <button onClick="{{ exportar }}" style="font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.08);color:#e6f0fa;cursor:pointer;font-family:inherit" style-hover="background:rgba(255,255,255,.18)">Exportar CSV</button>
+      </div>
+    </div>
+  </header>
+
+  <nav class="no-print" style="background:#fff;border-bottom:1px solid #e2e8f0;position:sticky;top:0;z-index:20;box-shadow:0 1px 4px rgba(15,42,67,.06)">
+    <div style="max-width:1240px;margin:0 auto;padding:0 24px;display:flex;gap:2px;overflow-x:auto">
+      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="6">
+        <button onClick="{{ t.go }}" style="background:none;border:none;border-bottom:2px solid {{ t.borde }};color:{{ t.color }};font-size:13.5px;font-weight:600;padding:14px 13px;white-space:nowrap;cursor:pointer;font-family:inherit">{{ t.label }}</button>
+      </sc-for>
+    </div>
+  </nav>
+
+  <div style="max-width:1240px;margin:0 auto;padding:26px 24px 90px;display:flex;flex-direction:column;gap:22px">
+
+    <sc-if value="{{ cargando }}" hint-placeholder-val="{{ true }}">
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:40px;text-align:center;color:#64748b;font-size:13.5px">Cargando análisis…</div>
+    </sc-if>
+
+    <sc-if value="{{ error }}">
+      <div style="border-left:4px solid #dc2626;background:#fff5f5;padding:12px 14px;border-radius:8px;color:#7f1d1d;font-size:13.5px">{{ error }}</div>
+    </sc-if>
+
+    <sc-if value="{{ esHoy }}">
+      <div style="display:flex;flex-direction:column;gap:22px">
+
+        <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+            <span style="width:5px;height:19px;background:#16a34a;border-radius:3px"></span>
+            <h2 style="font-size:19px;color:#0f2a43">Semáforo de existencias</h2>
+          </div>
+          <p style="color:#64748b;font-size:13.5px;margin-bottom:16px">Folios que quedan por serie, descontando los saltados. Rojo por debajo de 60 días de consumo, ámbar por debajo de {{ diasUmbral }}, verde arriba.</p>
+          <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(268px,1fr))">
+            <sc-for list="{{ semaforo }}" as="s" hint-placeholder-count="3">
+              <div style="border:1px solid #e2e8f0;border-radius:12px;padding:16px 18px;background:{{ s.fondo }}">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+                  <span style="width:14px;height:14px;border-radius:50%;background:{{ s.luz }};box-shadow:0 0 0 4px {{ s.halo }}"></span>
+                  <span style="font-size:14.5px;font-weight:700;color:#0f2a43">{{ s.serie }}</span>
+                  <span style="margin-left:auto;font-size:10.5px;font-weight:800;letter-spacing:.5px;padding:2px 9px;border-radius:999px;background:{{ s.badgeBg }};color:{{ s.luz }}">{{ s.estado }}</span>
+                </div>
+                <div style="display:flex;align-items:baseline;gap:7px">
+                  <span style="font-size:40px;font-weight:800;letter-spacing:-1.2px;color:{{ s.luz }};font-variant-numeric:tabular-nums;line-height:1">{{ s.quedan }}</span>
+                  <span style="font-size:13px;color:#64748b">folios disponibles</span>
+                </div>
+                <div style="height:9px;background:#e8edf4;border-radius:5px;overflow:hidden;margin:12px 0 8px">
+                  <div style="height:100%;border-radius:5px;background:{{ s.luz }};width:{{ s.w }}%"></div>
+                </div>
+                <div style="font-size:12.5px;color:#475569">{{ s.detalle }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;margin-top:16px;padding-top:14px;border-top:1px solid #eef2f7">
+            <span style="font-size:29px;font-weight:800;color:#0f2a43;font-variant-numeric:tabular-nums">{{ semTotal }}</span>
+            <span style="font-size:13.5px;color:#64748b">folios disponibles en total, de {{ semComprados }} comprados · {{ semSaltados }} saltados quedan fuera de la cuenta</span>
+          </div>
+        </section>
+
+        <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+            <span style="width:5px;height:19px;background:#dc2626;border-radius:3px"></span>
+            <h2 style="font-size:19px;color:#0f2a43">Qué atender hoy</h2>
+          </div>
+          <p style="color:#64748b;font-size:13.5px;margin-bottom:16px">Semáforo operativo. Prioridad alta = bloquea operación o factura; media = corrige esta semana.</p>
+          <div style="display:grid;gap:10px">
+            <sc-for list="{{ alertas }}" as="a" hint-placeholder-count="4">
+              <div style="display:grid;grid-template-columns:104px 1fr;gap:14px;align-items:start;border:1px solid #e2e8f0;border-left:4px solid {{ a.color }};background:{{ a.bg }};border-radius:10px;padding:13px 15px">
+                <div style="display:flex;flex-direction:column;gap:2px">
+                  <span style="font-size:10.5px;font-weight:800;letter-spacing:.6px;color:{{ a.color }}">{{ a.sev }}</span>
+                  <span style="font-size:19px;font-weight:800;color:{{ a.color }};font-variant-numeric:tabular-nums">{{ a.cifra }}</span>
+                  <span style="font-size:10.5px;color:#64748b;text-transform:uppercase;letter-spacing:.3px">{{ a.unidad }}</span>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:3px">
+                  <div style="font-size:14.5px;font-weight:700;color:#0f2a43">{{ a.titulo }}</div>
+                  <div style="font-size:13px;color:#475569">{{ a.detalle }}</div>
+                  <div style="font-size:12.5px;color:#0f2a43;font-weight:600">→ {{ a.accion }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+
+        <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+            <span style="width:5px;height:19px;background:#2563eb;border-radius:3px"></span>
+            <h2 style="font-size:19px;color:#0f2a43">Estado global</h2>
+          </div>
+          <div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(158px,1fr))">
+            <sc-for list="{{ kpis }}" as="k" hint-placeholder-count="6">
+              <div style="border:1px solid #e2e8f0;border-radius:11px;padding:14px 15px;background:#fbfcfe">
+                <div style="font-size:25px;font-weight:800;color:{{ k.color }};font-variant-numeric:tabular-nums">{{ k.v }}</div>
+                <div style="font-size:11.5px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-top:2px">{{ k.l }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+
+        <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div style="display:flex;align-items:center;gap:9px">
+              <span style="width:5px;height:19px;background:#2563eb;border-radius:3px"></span>
+              <h2 style="font-size:19px;color:#0f2a43">Control por ciclo</h2>
+            </div>
+            <select value="{{ ciclo }}" onChange="{{ setCiclo }}" class="no-print" style="font-size:13px;padding:7px 10px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#1f2937;font-family:inherit">
+              <sc-for list="{{ ciclos }}" as="c" hint-placeholder-count="3">
+                <option value="{{ c }}">Ciclo {{ c }}</option>
+              </sc-for>
+            </select>
+          </div>
+          <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
+            <sc-for list="{{ periodos }}" as="p" hint-placeholder-count="2">
+              <div style="border:1px solid #e2e8f0;border-radius:11px;padding:16px">
+                <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+                  <h3 style="font-size:15px;color:#0f2a43">{{ p.nombre }}</h3>
+                  <span style="font-size:11.5px;color:#64748b">{{ p.rango }}</span>
+                  <span style="font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;background:{{ p.badgeBg }};color:{{ p.badgeColor }}">{{ p.badge }}</span>
+                </div>
+                <sc-for list="{{ p.barras }}" as="b" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:center;gap:10px;margin:7px 0">
+                    <div style="font-size:12.5px;color:#64748b;min-width:104px">{{ b.lbl }}</div>
+                    <div style="flex:1;height:10px;background:#eef2f7;border-radius:6px;overflow:hidden">
+                      <div style="height:100%;border-radius:6px;background:{{ b.color }};width:{{ b.w }}%"></div>
+                    </div>
+                    <div style="font-size:12.5px;font-weight:700;color:#0f2a43;min-width:58px;text-align:right;font-variant-numeric:tabular-nums">{{ b.v }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-for>
+          </div>
+          <p style="font-size:12.5px;color:#64748b;margin-top:12px">Folios válidos = lotes del 2º período del ciclo 2026: {{ validosTxt }}</p>
+        </section>
+
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ esCobertura }}">
+      <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+          <span style="width:5px;height:19px;background:#2563eb;border-radius:3px"></span>
+          <h2 style="font-size:19px;color:#0f2a43">Mapa de cobertura por lote</h2>
+        </div>
+        <p style="color:#64748b;font-size:13.5px;margin-bottom:14px">Cada barra es el rango completo del lote, del primer folio al último. Verde = consumido, ámbar = saltado, gris = disponible.</p>
+        <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+          <sc-for list="{{ filtrosLote }}" as="f" hint-placeholder-count="4">
+            <button onClick="{{ f.go }}" style="font-size:12.5px;font-weight:600;padding:7px 13px;border-radius:999px;border:1px solid {{ f.borde }};background:{{ f.bg }};color:{{ f.color }};cursor:pointer;font-family:inherit">{{ f.label }}</button>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <sc-for list="{{ cobertura }}" as="l" hint-placeholder-count="5">
+            <div>
+              <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between;margin-bottom:7px">
+                <div style="display:flex;flex-wrap:wrap;gap:9px;align-items:baseline">
+                  <span style="font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:6px;background:{{ l.tipoBg }};color:{{ l.tipoColor }}">{{ l.tipo }}</span>
+                  <span style="font-size:13.5px;font-weight:700;color:#0f2a43;font-variant-numeric:tabular-nums">{{ l.rango }}</span>
+                  <span style="font-size:12px;color:#64748b">{{ l.sub }}</span>
+                </div>
+                <span style="font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:999px;background:{{ l.estadoBg }};color:{{ l.estadoColor }}">{{ l.estado }}</span>
+              </div>
+              <div style="display:flex;height:22px;border-radius:6px;overflow:hidden;border:1px solid #e2e8f0;background:#eef2f7">
+                <sc-for list="{{ l.segs }}" as="s" hint-placeholder-count="10">
+                  <div title="{{ s.tip }}" style="height:100%;background:{{ s.bg }};width:{{ s.w }}%"></div>
+                </sc-for>
+              </div>
+              <div style="display:flex;gap:16px;margin-top:6px;font-size:12px;color:#64748b;flex-wrap:wrap">
+                <span style="color:#15803d;font-weight:700">{{ l.usados }} consumidos</span>
+                <span style="color:#b45309;font-weight:700">{{ l.saltados }} saltados</span>
+                <span style="font-weight:700;color:#475569">{{ l.disponibles }} disponibles</span>
+                <span>{{ l.pct }}% de uso</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ esTraza }}">
+      <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+          <span style="width:5px;height:19px;background:#2563eb;border-radius:3px"></span>
+          <h2 style="font-size:19px;color:#0f2a43">Trazabilidad folio → placa → cliente</h2>
+        </div>
+        <p style="color:#64748b;font-size:13.5px;margin-bottom:14px">Busca por folio, placa o empresa. Elige un registro para ver su lote, su validez y el historial de la unidad.</p>
+        <div class="no-print" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+          <input value="{{ q }}" onInput="{{ setQ }}" placeholder="Folio, placa o empresa…" style="flex:1;min-width:240px;font-size:13.5px;padding:9px 12px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#1f2937;font-family:inherit">
+          <button onClick="{{ limpiarQ }}" style="font-size:12.5px;font-weight:600;padding:8px 14px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#0f2a43;cursor:pointer;font-family:inherit">Limpiar</button>
+        </div>
+        <div style="display:grid;gap:16px;grid-template-columns:{{ trazaCols }}">
+          <div>
+            <div style="border:1px solid #e2e8f0;border-radius:10px;overflow:auto;max-height:520px">
+              <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+                <thead>
+                  <tr>
+                    <th style="background:#f8fafc;color:#0f2a43;font-size:11px;text-transform:uppercase;letter-spacing:.3px;text-align:left;padding:9px 10px;border-bottom:1px solid #e2e8f0;position:sticky;top:0">Folio</th>
+                    <th style="background:#f8fafc;color:#0f2a43;font-size:11px;text-transform:uppercase;letter-spacing:.3px;text-align:left;padding:9px 10px;border-bottom:1px solid #e2e8f0;position:sticky;top:0">Serie</th>
+                    <th style="background:#f8fafc;color:#0f2a43;font-size:11px;text-transform:uppercase;letter-spacing:.3px;text-align:left;padding:9px 10px;border-bottom:1px solid #e2e8f0;position:sticky;top:0">Placa</th>
+                    <th style="background:#f8fafc;color:#0f2a43;font-size:11px;text-transform:uppercase;letter-spacing:.3px;text-align:left;padding:9px 10px;border-bottom:1px solid #e2e8f0;position:sticky;top:0">Empresa</th>
+                    <th style="background:#f8fafc;color:#0f2a43;font-size:11px;text-transform:uppercase;letter-spacing:.3px;text-align:left;padding:9px 10px;border-bottom:1px solid #e2e8f0;position:sticky;top:0">Fecha</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <sc-for list="{{ resultados }}" as="r" hint-placeholder-count="8">
+                    <tr onClick="{{ r.go }}" style="cursor:pointer;background:{{ r.bg }}">
+                      <td style="padding:8px 10px;border-bottom:1px solid #eef2f7;font-weight:700;color:#0f2a43;font-variant-numeric:tabular-nums">{{ r.folio }}</td>
+                      <td style="padding:8px 10px;border-bottom:1px solid #eef2f7"><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:{{ r.tipoBg }};color:{{ r.tipoColor }}">{{ r.serie }}</span></td>
+                      <td style="padding:8px 10px;border-bottom:1px solid #eef2f7;font-variant-numeric:tabular-nums">{{ r.placas }}</td>
+                      <td style="padding:8px 10px;border-bottom:1px solid #eef2f7;color:#475569">{{ r.empresa }}</td>
+                      <td style="padding:8px 10px;border-bottom:1px solid #eef2f7;color:#64748b;font-variant-numeric:tabular-nums">{{ r.fecha }}</td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+            <p style="font-size:12.5px;color:#64748b;margin-top:8px">{{ conteoTraza }}</p>
+          </div>
+          <sc-if value="{{ sel }}">
+            <div style="border:1px solid #e2e8f0;border-radius:11px;padding:16px;background:#fbfcfe;height:fit-content">
+              <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Folio</div>
+              <div style="font-size:23px;font-weight:800;color:#0f2a43;font-variant-numeric:tabular-nums;margin-bottom:12px">{{ selFolio }}</div>
+              <sc-for list="{{ detalle }}" as="d" hint-placeholder-count="7">
+                <div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid #eef2f7;font-size:13px">
+                  <span style="color:#64748b">{{ d.k }}</span>
+                  <span style="font-weight:700;color:{{ d.color }};text-align:right">{{ d.v }}</span>
+                </div>
+              </sc-for>
+              <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin:16px 0 8px">Historial de la unidad</div>
+              <sc-for list="{{ historial }}" as="h" hint-placeholder-count="3">
+                <div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:5px 0;border-bottom:1px dashed #e2e8f0">
+                  <span style="font-variant-numeric:tabular-nums;color:#0f2a43;font-weight:600">{{ h.folio }}</span>
+                  <span style="color:#64748b">{{ h.txt }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ esClientes }}">
+      <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+          <span style="width:5px;height:19px;background:#dc2626;border-radius:3px"></span>
+          <h2 style="font-size:19px;color:#0f2a43">Clientes en riesgo de fuga</h2>
+        </div>
+        <p style="color:#64748b;font-size:13.5px;margin-bottom:14px">Período 1 (ene–jun) contra Período 2 (jul–dic) del ciclo 2026. Con los datos actuales P1 abarca seis meses completos y P2 solo jul–ago, así que una caída moderada puede ser efecto del corte.</p>
+        <div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));margin-bottom:16px">
+          <sc-for list="{{ cliKpis }}" as="k" hint-placeholder-count="5">
+            <div style="border:1px solid #e2e8f0;border-radius:11px;padding:14px 15px;background:#fbfcfe">
+              <div style="font-size:25px;font-weight:800;color:{{ k.color }};font-variant-numeric:tabular-nums">{{ k.v }}</div>
+              <div style="font-size:11.5px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-top:2px">{{ k.l }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin-bottom:16px">
+          <sc-for list="{{ cartera }}" as="c" hint-placeholder-count="4">
+            <div style="display:flex;align-items:baseline;gap:10px;border:1px solid #e2e8f0;border-left:4px solid {{ c.color }};border-radius:10px;padding:12px 14px;background:#fbfcfe">
+              <div style="font-size:20px;font-weight:800;color:{{ c.color }};font-variant-numeric:tabular-nums;min-width:52px">{{ c.v }}</div>
+              <div style="font-size:12.5px;color:#475569">{{ c.l }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
+          <sc-for list="{{ filtrosCli }}" as="f" hint-placeholder-count="5">
+            <button onClick="{{ f.go }}" style="font-size:12.5px;font-weight:600;padding:7px 13px;border-radius:999px;border:1px solid {{ f.borde }};background:{{ f.bg }};color:{{ f.color }};cursor:pointer;font-family:inherit">{{ f.label }}</button>
+          </sc-for>
+          <input value="{{ cliQ }}" onInput="{{ setCliQ }}" placeholder="Buscar empresa…" style="flex:1;min-width:200px;font-size:13.5px;padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#1f2937;font-family:inherit">
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:10px;overflow:auto;max-height:560px">
+          <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+            <thead>
+              <tr>
+                <th style="background:#f8fafc;color:#0f2a43;font-size:11px;text-transform:uppercase;letter-spacing:.3px;text-align:left;padding:9px 10px;border-bottom:1px solid #e2e8f0;position:sticky;top:0">Empresa</th>
+                <th style="background:#f8fafc;color:#0f2a43;font-size:11px;text-transform:uppercase;letter-spacing:.3px;text-align:right;padding:9px 10px;border-bottom:1px solid #e2e8f0;position:sticky;top:0">P1</th>
+                <th style="background:#f8fafc;color:#0f2a43;font-size:11px;text-transform:uppercase;letter-spacing:.3px;text-align:right;padding:9px 10px;border-bottom:1px solid #e2e8f0;position:sticky;top:0">P2</th>
+                <th style="background:#f8fafc;color:#0f2a43;font-size:11px;text-transform:uppercase;letter-spacing:.3px;text-align:left;padding:9px 10px;border-bottom:1px solid #e2e8f0;position:sticky;top:0">Cambio</th>
+                <th style="background:#f8fafc;color:#0f2a43;font-size:11px;text-transform:uppercase;letter-spacing:.3px;text-align:left;padding:9px 10px;border-bottom:1px solid #e2e8f0;position:sticky;top:0">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ clientes }}" as="c" hint-placeholder-count="10">
+                <tr>
+                  <td style="padding:8px 10px;border-bottom:1px solid #eef2f7;color:#0f2a43;font-weight:600">{{ c.empresa }}</td>
+                  <td style="padding:8px 10px;border-bottom:1px solid #eef2f7;text-align:right;font-variant-numeric:tabular-nums">{{ c.p1 }}</td>
+                  <td style="padding:8px 10px;border-bottom:1px solid #eef2f7;text-align:right;font-variant-numeric:tabular-nums">{{ c.p2 }}</td>
+                  <td style="padding:8px 10px;border-bottom:1px solid #eef2f7">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <div style="width:88px;height:8px;background:#eef2f7;border-radius:5px;overflow:hidden">
+                        <div style="height:100%;background:{{ c.color }};width:{{ c.w }}%"></div>
+                      </div>
+                      <span style="font-weight:700;color:{{ c.color }};font-variant-numeric:tabular-nums">{{ c.deltaTxt }}</span>
+                    </div>
+                  </td>
+                  <td style="padding:8px 10px;border-bottom:1px solid #eef2f7"><span style="font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;background:{{ c.bg }};color:{{ c.color }}">{{ c.estado }}</span></td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+        <p style="font-size:12.5px;color:#64748b;margin-top:8px">{{ conteoCli }}</p>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ esPronostico }}">
+      <div style="display:flex;flex-direction:column;gap:22px">
+        <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+            <span style="width:5px;height:19px;background:#2563eb;border-radius:3px"></span>
+            <h2 style="font-size:19px;color:#0f2a43">Pronóstico y compra sugerida</h2>
+          </div>
+          <p style="color:#64748b;font-size:13.5px;margin-bottom:16px">Tasa diaria calculada sobre los reportes disponibles, con corte al {{ ultima }}. "Real" descuenta los folios saltados y cuenta los días desde ese corte; "nominal" supone que todo el lote es usable.</p>
+          <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
+            <sc-for list="{{ series }}" as="s" hint-placeholder-count="3">
+              <div style="border:1px solid #e2e8f0;border-left:4px solid {{ s.color }};border-radius:11px;padding:16px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:10px">
+                  <h3 style="font-size:15px;color:#0f2a43">{{ s.serie }}</h3>
+                  <span style="font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:999px;background:{{ s.bg }};color:{{ s.color }}">{{ s.riesgo }}</span>
+                </div>
+                <div style="display:flex;height:14px;border-radius:7px;overflow:hidden;background:#eef2f7;margin-bottom:10px">
+                  <div style="background:#16a34a;height:100%;width:{{ s.wUsados }}%"></div>
+                  <div style="background:#d97706;height:100%;width:{{ s.wSaltados }}%"></div>
+                </div>
+                <sc-for list="{{ s.filas }}" as="f" hint-placeholder-count="6">
+                  <div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #eef2f7;font-size:13px">
+                    <span style="color:#64748b">{{ f.k }}</span>
+                    <span style="font-weight:700;color:{{ f.color }};font-variant-numeric:tabular-nums">{{ f.v }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+
+        <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+            <span style="width:5px;height:19px;background:#2563eb;border-radius:3px"></span>
+            <h2 style="font-size:19px;color:#0f2a43">Consumo por mes, ciclo y período</h2>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <sc-for list="{{ meses }}" as="m" hint-placeholder-count="4">
+              <div style="display:grid;grid-template-columns:150px 1fr 74px;gap:12px;align-items:center">
+                <div style="font-size:13px;color:#0f2a43;font-weight:600">{{ m.etiqueta }}</div>
+                <div style="display:flex;height:16px;border-radius:6px;overflow:hidden;background:#eef2f7">
+                  <div title="EMISIONES" style="background:#2563eb;height:100%;width:{{ m.wE }}%"></div>
+                  <div title="ARRASTRE" style="background:#0d9488;height:100%;width:{{ m.wA }}%"></div>
+                  <div title="MOTRIZ" style="background:#c2410c;height:100%;width:{{ m.wM }}%"></div>
+                </div>
+                <div style="font-size:13px;font-weight:700;color:#0f2a43;text-align:right;font-variant-numeric:tabular-nums">{{ m.total }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex;gap:16px;margin-top:14px;font-size:12px;color:#64748b;flex-wrap:wrap">
+            <span><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:#2563eb;margin-right:6px"></span>Emisiones</span>
+            <span><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:#0d9488;margin-right:6px"></span>Arrastre</span>
+            <span><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:#c2410c;margin-right:6px"></span>Motriz</span>
+          </div>
+        </section>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ esProduccion }}">
+      <div style="display:flex;flex-direction:column;gap:22px">
+        <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+            <span style="width:5px;height:19px;background:#2563eb;border-radius:3px"></span>
+            <h2 style="font-size:19px;color:#0f2a43">Producción por técnico</h2>
+          </div>
+          <p style="color:#64748b;font-size:13.5px;margin-bottom:16px">Verificaciones (emisiones y físico-mecánicas) capturadas por cada técnico. {{ notaTecnicos }}</p>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <sc-for list="{{ tecnicos }}" as="t" hint-placeholder-count="8">
+              <div style="display:grid;grid-template-columns:minmax(180px,1.2fr) 1fr 96px;gap:12px;align-items:center">
+                <div style="font-size:13px;color:#0f2a43;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.n }}</div>
+                <div style="height:12px;background:#eef2f7;border-radius:6px;overflow:hidden">
+                  <div style="height:100%;border-radius:6px;background:{{ t.color }};width:{{ t.w }}%"></div>
+                </div>
+                <div style="font-size:13px;text-align:right;font-variant-numeric:tabular-nums"><b style="color:#0f2a43">{{ t.c }}</b> <span style="color:#64748b;font-size:12px">{{ t.pct }}%</span></div>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+
+        <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+            <span style="width:5px;height:19px;background:#2563eb;border-radius:3px"></span>
+            <h2 style="font-size:19px;color:#0f2a43">Volumen por empresa</h2>
+          </div>
+          <p style="color:#64748b;font-size:13.5px;margin-bottom:16px">Las 15 empresas con más verificaciones en el período reportado.</p>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <sc-for list="{{ empresas }}" as="e" hint-placeholder-count="10">
+              <div style="display:grid;grid-template-columns:minmax(200px,1.4fr) 1fr 96px;gap:12px;align-items:center">
+                <div style="font-size:13px;color:#0f2a43;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ e.n }}</div>
+                <div style="height:12px;background:#eef2f7;border-radius:6px;overflow:hidden">
+                  <div style="height:100%;border-radius:6px;background:{{ e.color }};width:{{ e.w }}%"></div>
+                </div>
+                <div style="font-size:13px;text-align:right;font-variant-numeric:tabular-nums"><b style="color:#0f2a43">{{ e.c }}</b> <span style="color:#64748b;font-size:12px">{{ e.estado }}</span></div>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+
+        <div style="display:grid;gap:22px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+          <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+            <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+              <span style="width:5px;height:19px;background:#2563eb;border-radius:3px"></span>
+              <h2 style="font-size:19px;color:#0f2a43">Verificaciones por día</h2>
+            </div>
+            <div style="display:flex;align-items:flex-end;gap:3px;height:150px;padding-bottom:4px;border-bottom:1px solid #e2e8f0">
+              <sc-for list="{{ dias }}" as="d" hint-placeholder-count="20">
+                <div title="{{ d.tip }}" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:1px">
+                  <div style="background:#2563eb;border-radius:2px 2px 0 0;height:{{ d.hEc }}%"></div>
+                  <div style="background:#0d9488;height:{{ d.hFm }}%"></div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:11.5px;color:#64748b;margin-top:6px">
+              <span>{{ diaInicio }}</span><span>{{ diaFin }}</span>
+            </div>
+            <div style="display:flex;gap:16px;margin-top:10px;font-size:12px;color:#64748b">
+              <span><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:#2563eb;margin-right:6px"></span>Emisiones</span>
+              <span><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:#0d9488;margin-right:6px"></span>Físico-mecánica</span>
+            </div>
+          </section>
+
+          <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+            <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+              <span style="width:5px;height:19px;background:#2563eb;border-radius:3px"></span>
+              <h2 style="font-size:19px;color:#0f2a43">Resultados por tipo de verificación</h2>
+            </div>
+            <sc-for list="{{ resultadosFm }}" as="r" hint-placeholder-count="5">
+              <div style="display:flex;align-items:center;gap:10px;margin:9px 0">
+                <div style="font-size:12.5px;color:#64748b;min-width:190px">{{ r.n }}</div>
+                <div style="flex:1;height:12px;background:#eef2f7;border-radius:6px;overflow:hidden">
+                  <div style="height:100%;border-radius:6px;background:{{ r.color }};width:{{ r.w }}%"></div>
+                </div>
+                <div style="font-size:12.5px;font-weight:700;color:#0f2a43;min-width:76px;text-align:right;font-variant-numeric:tabular-nums">{{ r.c }} · {{ r.pct }}%</div>
+              </div>
+            </sc-for>
+            <div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));margin-top:16px">
+              <sc-for list="{{ prodKpis }}" as="k" hint-placeholder-count="5">
+                <div style="border:1px solid #e2e8f0;border-radius:11px;padding:13px 14px;background:#fbfcfe">
+                  <div style="font-size:22px;font-weight:800;color:{{ k.color }};font-variant-numeric:tabular-nums">{{ k.v }}</div>
+                  <div style="font-size:11.5px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-top:2px">{{ k.l }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ esCompras }}">
+      <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+          <span style="width:5px;height:19px;background:#2563eb;border-radius:3px"></span>
+          <h2 style="font-size:19px;color:#0f2a43">Compra de folios</h2>
+        </div>
+        <p style="color:#64748b;font-size:13.5px;margin-bottom:16px">Petición a ing. Briones, pago a SICT y pago a imprenta por cada lote. {{ comprasNota }}</p>
+        <div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));margin-bottom:18px">
+          <sc-for list="{{ comprasKpis }}" as="k" hint-placeholder-count="5">
+            <div style="border:1px solid #e2e8f0;border-radius:11px;padding:14px 15px;background:#fbfcfe">
+              <div style="font-size:23px;font-weight:800;color:{{ k.color }};font-variant-numeric:tabular-nums">{{ k.v }}</div>
+              <div style="font-size:11.5px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-top:2px">{{ k.l }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:10px;overflow:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap">
+            <thead>
+              <tr>
+                <sc-for list="{{ comprasCols }}" as="h" hint-placeholder-count="11">
+                  <th style="background:#f8fafc;color:#0f2a43;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;text-align:{{ h.a }};padding:8px 10px;border-bottom:1px solid #e2e8f0;border-right:1px solid #eef2f7;position:sticky;top:0;vertical-align:bottom">
+                    <div>{{ h.l1 }}</div>
+                    <div style="font-weight:600;color:#94a3b8;font-size:9.5px">{{ h.l2 }}</div>
+                  </th>
+                </sc-for>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ comprasFilas }}" as="r" hint-placeholder-count="15">
+                <tr style="background:{{ r.bg }}">
+                  <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;text-align:right;font-variant-numeric:tabular-nums;color:#0f2a43;font-weight:700">{{ r.cantidad }}</td>
+                  <td style="padding:7px 10px;border-bottom:1px solid #eef2f7"><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:{{ r.tipoBg }};color:{{ r.tipoColor }}">{{ r.tipo }}</span></td>
+                  <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;color:{{ r.pcolor }};font-weight:600;font-variant-numeric:tabular-nums">{{ r.peticion }}</td>
+                  <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;text-align:right;font-variant-numeric:tabular-nums;color:#475569">{{ r.sict }}</td>
+                  <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;color:#64748b;font-variant-numeric:tabular-nums">{{ r.fsict }}</td>
+                  <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;text-align:right;font-variant-numeric:tabular-nums;color:#475569">{{ r.imp }}</td>
+                  <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;color:#64748b;font-variant-numeric:tabular-nums">{{ r.fimp }}</td>
+                  <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;color:{{ r.rcolor }};font-variant-numeric:tabular-nums;font-weight:600">{{ r.recibido }}</td>
+                  <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;color:#475569">{{ r.factura }}</td>
+                  <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;color:#0f2a43;font-weight:700;font-variant-numeric:tabular-nums">{{ r.rango }}</td>
+                  <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;text-align:right;font-variant-numeric:tabular-nums;color:#0f2a43;font-weight:700">{{ r.total }}</td>
+                  <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;text-align:right;font-variant-numeric:tabular-nums;color:#64748b">{{ r.unitario }}</td>
+                </tr>
+              </sc-for>
+              <tr style="background:#f8fafc">
+                <td style="padding:9px 10px;border-top:2px solid #e2e8f0;text-align:right;font-weight:800;color:#0f2a43;font-variant-numeric:tabular-nums">{{ comprasTot.folios }}</td>
+                <td colspan="2" style="padding:9px 10px;border-top:2px solid #e2e8f0;font-weight:800;color:#0f2a43">Total</td>
+                <td style="padding:9px 10px;border-top:2px solid #e2e8f0;text-align:right;font-weight:800;color:#0f2a43;font-variant-numeric:tabular-nums">{{ comprasTot.sict }}</td>
+                <td style="border-top:2px solid #e2e8f0"></td>
+                <td style="padding:9px 10px;border-top:2px solid #e2e8f0;text-align:right;font-weight:800;color:#0f2a43;font-variant-numeric:tabular-nums">{{ comprasTot.imp }}</td>
+                <td colspan="4" style="border-top:2px solid #e2e8f0"></td>
+                <td style="padding:9px 10px;border-top:2px solid #e2e8f0;text-align:right;font-weight:800;color:#0f2a43;font-variant-numeric:tabular-nums">{{ comprasTot.total }}</td>
+                <td style="padding:9px 10px;border-top:2px solid #e2e8f0;text-align:right;font-weight:800;color:#64748b;font-variant-numeric:tabular-nums">{{ comprasTot.unitario }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px" class="no-print">
+          <button onClick="{{ exportarCompras }}" style="font-size:12.5px;font-weight:600;padding:9px 15px;border:1px solid #2563eb;border-radius:8px;background:#eff6ff;color:#1d4ed8;cursor:pointer;font-family:inherit">Exportar compras (CSV)</button>
+        </div>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ esDatos }}">
+      <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+          <span style="width:5px;height:19px;background:#2563eb;border-radius:3px"></span>
+          <h2 style="font-size:19px;color:#0f2a43">Vida de los folios</h2>
+        </div>
+        <p style="color:#64748b;font-size:13.5px;margin-bottom:18px">Vida de cada lote: del día que se pidió a ing. Briones hasta el último folio consumido. La franja clara es el trámite y la sólida es el consumo real. Fuente activa: {{ fuente }}.</p>
+
+        <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:#64748b;margin-bottom:12px">
+          <span><span style="display:inline-block;width:16px;height:9px;border-radius:2px;background:repeating-linear-gradient(90deg,#cbd5e1 0 4px,transparent 4px 7px);margin-right:6px;vertical-align:middle"></span>trámite: petición → recepción</span>
+          <span><span style="display:inline-block;width:16px;height:9px;border-radius:2px;background:#2563eb;margin-right:6px;vertical-align:middle"></span>consumo: primer folio → último folio</span>
+          <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#0f2a43;margin-right:6px;vertical-align:middle"></span>lote agotado</span>
+        </div>
+
+        <div style="border:1px solid #e2e8f0;border-radius:11px;padding:16px 18px;overflow-x:auto">
+          <div style="min-width:640px">
+            <div style="display:grid;grid-template-columns:210px 1fr;gap:12px;margin-bottom:8px">
+              <div></div>
+              <div style="display:flex;position:relative;height:18px;border-bottom:1px solid #e2e8f0">
+                <sc-for list="{{ vidaMeses }}" as="m" hint-placeholder-count="12">
+                  <div style="flex:1;font-size:10px;color:#94a3b8;text-align:center;border-left:1px solid #f1f5f9;font-weight:600;white-space:nowrap;overflow:hidden">{{ m.l }}</div>
+                </sc-for>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <sc-for list="{{ vidaLotes }}" as="l" hint-placeholder-count="15">
+                <div style="display:grid;grid-template-columns:210px 1fr;gap:12px;align-items:center">
+                  <div style="display:flex;align-items:center;gap:7px;min-width:0">
+                    <span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:5px;background:{{ l.tipoBg }};color:{{ l.tipoColor }}">{{ l.tipoCorto }}</span>
+                    <span style="font-size:11.5px;color:#0f2a43;font-weight:700;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ l.rango }}</span>
+                  </div>
+                  <div style="position:relative;height:22px;background:#fbfcfe;border-radius:5px">
+                    <div title="{{ l.tramiteTip }}" style="position:absolute;top:6px;height:10px;border-radius:3px;left:{{ l.tramiteX }}%;width:{{ l.tramiteW }}%;background:repeating-linear-gradient(90deg,#cbd5e1 0 4px,transparent 4px 7px);border:1px solid #e2e8f0"></div>
+                    <sc-if value="{{ l.tieneUso }}">
+                      <div title="{{ l.usoTip }}" style="position:absolute;top:2px;height:18px;border-radius:4px;left:{{ l.usoX }}%;width:{{ l.usoW }}%;background:{{ l.color }};display:flex;align-items:center;justify-content:flex-end;padding-right:5px;box-sizing:border-box">
+                        <span style="font-size:9.5px;font-weight:800;color:#fff;white-space:nowrap">{{ l.diasDentro }}</span>
+                      </div>
+                      <div style="position:absolute;top:4px;right:{{ l.diasFueraRight }}%;font-size:9.5px;font-weight:800;color:#475569;white-space:nowrap;padding-right:6px;text-align:right">{{ l.diasFuera }}</div>
+                    </sc-if>
+                    <sc-if value="{{ l.sinUso }}">
+                      <div style="position:absolute;top:4px;right:6px;font-size:10px;font-weight:700;color:#b91c1c;letter-spacing:.3px">SIN ESTRENAR</div>
+                    </sc-if>
+                    <sc-if value="{{ l.agotado }}">
+                      <div title="{{ l.agotadoTip }}" style="position:absolute;top:6px;width:10px;height:10px;border-radius:50%;background:#0f2a43;border:2px solid #fff;left:{{ l.finX }}%"></div>
+                    </sc-if>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-top:18px">
+          <sc-for list="{{ vidaKpis }}" as="k" hint-placeholder-count="4">
+            <div style="border:1px solid #e2e8f0;border-radius:11px;padding:14px 15px;background:#fbfcfe">
+              <div style="font-size:22px;font-weight:800;color:{{ k.color }};font-variant-numeric:tabular-nums">{{ k.v }}</div>
+              <div style="font-size:11.5px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-top:2px">{{ k.l }}</div>
+              <div style="font-size:11.5px;color:#94a3b8;margin-top:3px">{{ k.sub }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <label onDragOver="{{ onDragOver }}" onDragLeave="{{ onDragLeave }}" onDrop="{{ onDrop }}" class="no-print" style="display:flex;align-items:center;justify-content:center;gap:10px;border:1px dashed {{ dropBorde }};background:{{ dropBg }};border-radius:10px;padding:14px 18px;cursor:pointer;margin-top:18px;font-size:13px;color:#475569">
+          <span style="font-weight:700;color:#0f2a43">Cargar otro reporte</span>
+          <span>arrastra o haz clic · .json o .html</span>
+          <input type="file" accept=".json,.html,application/json,text/html" onChange="{{ onFile }}" style="display:none">
+        </label>
+        <div style="margin-top:26px;padding-top:22px;border-top:1px solid #eef2f7">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+            <span style="width:5px;height:19px;background:#0d9488;border-radius:3px"></span>
+            <h3 style="font-size:17px;color:#0f2a43">Desglose de folios: cómo se calcula</h3>
+          </div>
+          <p style="color:#64748b;font-size:13.5px;margin-bottom:18px">Todo sale de dos fuentes: los 15 lotes comprados definen los rangos, y las {{ dgConsumo }}. Nada se estima.</p>
+
+          <div style="display:flex;flex-wrap:wrap;align-items:stretch;gap:10px;margin-bottom:22px">
+            <sc-for list="{{ dgFormula }}" as="f" hint-placeholder-count="7">
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="border:1px solid {{ f.borde }};background:{{ f.bg }};border-radius:10px;padding:12px 15px;min-width:126px">
+                  <div style="font-size:22px;font-weight:800;color:{{ f.color }};font-variant-numeric:tabular-nums">{{ f.v }}</div>
+                  <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-top:2px">{{ f.l }}</div>
+                  <div style="font-size:11.5px;color:#94a3b8;margin-top:3px">{{ f.sub }}</div>
+                </div>
+                <span style="font-size:22px;font-weight:700;color:#94a3b8">{{ f.op }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin-bottom:22px">
+            <sc-for list="{{ dgSeries }}" as="s" hint-placeholder-count="3">
+              <div style="border:1px solid #e2e8f0;border-radius:11px;padding:15px 17px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+                  <span style="font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:6px;background:{{ s.tipoBg }};color:{{ s.tipoColor }}">{{ s.serie }}</span>
+                  <span style="font-size:12.5px;color:#64748b">{{ s.comprados }} comprados</span>
+                </div>
+                <div style="display:flex;height:30px;border-radius:6px;overflow:hidden;border:1px solid #e2e8f0">
+                  <div title="usados" style="background:#16a34a;width:{{ s.wUsados }}%"></div>
+                  <div title="saltados" style="background:#d97706;width:{{ s.wSaltados }}%"></div>
+                  <div title="disponibles" style="background:#e2e8f0;width:{{ s.wLibres }}%"></div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:5px;margin-top:11px">
+                  <sc-for list="{{ s.filas }}" as="r" hint-placeholder-count="3">
+                    <div style="display:flex;align-items:center;gap:9px;font-size:12.5px">
+                      <span style="width:10px;height:10px;border-radius:3px;background:{{ r.color }}"></span>
+                      <span style="color:#475569;flex:1">{{ r.l }}</span>
+                      <span style="font-weight:700;color:#0f2a43;font-variant-numeric:tabular-nums">{{ r.v }}</span>
+                      <span style="color:#94a3b8;min-width:44px;text-align:right">{{ r.pct }}%</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="border:1px solid #e2e8f0;border-radius:11px;padding:15px 17px;margin-bottom:22px;background:#fbfcfe">
+            <h4 style="font-size:14px;color:#0f2a43;margin-bottom:8px">Cómo se detecta un folio saltado</h4>
+            <p style="font-size:13px;color:#475569;margin-bottom:12px">Dentro de cada lote se recorre folio por folio desde el primero hasta el más alto que aparece en los reportes. Los que no aparecen en ese tramo se cuentan como saltados. Lo que está después del último folio usado sigue siendo inventario disponible, no un salto.</p>
+            <div style="display:flex;gap:2px;height:26px;border-radius:5px;overflow:hidden;border:1px solid #e2e8f0;margin-bottom:8px">
+              <sc-for list="{{ dgEjemplo }}" as="e" hint-placeholder-count="14">
+                <div title="{{ e.tip }}" style="flex:1;background:{{ e.color }};display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:700;color:{{ e.txtColor }}">{{ e.n }}</div>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:16px;font-size:12px;color:#64748b;flex-wrap:wrap">
+              <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#16a34a;margin-right:6px"></span>en los reportes = usado</span>
+              <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#d97706;margin-right:6px"></span>hueco antes del último usado = saltado</span>
+              <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#e2e8f0;margin-right:6px"></span>después del último usado = disponible</span>
+            </div>
+          </div>
+
+          <div style="border:1px solid #e2e8f0;border-radius:10px;overflow:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap">
+              <thead>
+                <tr>
+                  <sc-for list="{{ dgCols }}" as="h" hint-placeholder-count="9">
+                    <th style="background:#f8fafc;color:#0f2a43;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;text-align:{{ h.a }};padding:8px 10px;border-bottom:1px solid #e2e8f0;border-right:1px solid #eef2f7">{{ h.l }}</th>
+                  </sc-for>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ dgFilas }}" as="r" hint-placeholder-count="15">
+                  <tr style="background:{{ r.bg }}">
+                    <td style="padding:7px 10px;border-bottom:1px solid #eef2f7"><span style="font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;background:{{ r.tipoBg }};color:{{ r.tipoColor }}">{{ r.tipo }}</span></td>
+                    <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;font-weight:700;color:#0f2a43;font-variant-numeric:tabular-nums">{{ r.rango }}</td>
+                    <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;text-align:right;font-variant-numeric:tabular-nums;color:#0f2a43">{{ r.cantidad }}</td>
+                    <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;font-variant-numeric:tabular-nums;color:#475569">{{ r.tramo }}</td>
+                    <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;text-align:right;font-variant-numeric:tabular-nums;color:#15803d;font-weight:700">{{ r.usados }}</td>
+                    <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;text-align:right;font-variant-numeric:tabular-nums;color:#b45309;font-weight:700">{{ r.saltados }}</td>
+                    <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;text-align:right;font-variant-numeric:tabular-nums;color:#0f2a43;font-weight:700">{{ r.disponibles }}</td>
+                    <td style="padding:7px 10px;border-bottom:1px solid #eef2f7;color:#64748b;font-size:11.5px">{{ r.cuenta }}</td>
+                    <td style="padding:7px 10px;border-bottom:1px solid #eef2f7"><span style="font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:{{ r.estadoBg }};color:{{ r.estadoColor }}">{{ r.estado }}</span></td>
+                  </tr>
+                </sc-for>
+                <tr style="background:#f8fafc">
+                  <td colspan="2" style="padding:9px 10px;border-top:2px solid #e2e8f0;font-weight:800;color:#0f2a43">Total 15 lotes</td>
+                  <td style="padding:9px 10px;border-top:2px solid #e2e8f0;text-align:right;font-weight:800;color:#0f2a43;font-variant-numeric:tabular-nums">{{ dgTot.cantidad }}</td>
+                  <td style="border-top:2px solid #e2e8f0"></td>
+                  <td style="padding:9px 10px;border-top:2px solid #e2e8f0;text-align:right;font-weight:800;color:#15803d;font-variant-numeric:tabular-nums">{{ dgTot.usados }}</td>
+                  <td style="padding:9px 10px;border-top:2px solid #e2e8f0;text-align:right;font-weight:800;color:#b45309;font-variant-numeric:tabular-nums">{{ dgTot.saltados }}</td>
+                  <td style="padding:9px 10px;border-top:2px solid #e2e8f0;text-align:right;font-weight:800;color:#0f2a43;font-variant-numeric:tabular-nums">{{ dgTot.disponibles }}</td>
+                  <td colspan="2" style="border-top:2px solid #e2e8f0"></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="font-size:12.5px;color:#64748b;margin-top:9px">{{ dgNota }}</p>
+        </div>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px">
+          <button onClick="{{ exportar }}" style="font-size:12.5px;font-weight:600;padding:9px 15px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#0f2a43;cursor:pointer;font-family:inherit">Exportar la vista actual (CSV)</button>
+          <button onClick="{{ exportarLotes }}" style="font-size:12.5px;font-weight:600;padding:9px 15px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#0f2a43;cursor:pointer;font-family:inherit">Exportar lotes (CSV)</button>
+          <button onClick="{{ exportarConsumo }}" style="font-size:12.5px;font-weight:600;padding:9px 15px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#0f2a43;cursor:pointer;font-family:inherit">Exportar consumo completo (CSV)</button>
+          <button onClick="{{ recargar }}" style="font-size:12.5px;font-weight:600;padding:9px 15px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#0f2a43;cursor:pointer;font-family:inherit">Volver al análisis base</button>
+        </div>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ esBd }}">
+      <section class="sheet" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;box-shadow:0 1px 2px rgba(15,42,67,.04)">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+          <span style="width:5px;height:19px;background:#2563eb;border-radius:3px"></span>
+          <h2 style="font-size:19px;color:#0f2a43">Base de datos</h2>
+        </div>
+        <p style="color:#64748b;font-size:13.5px;margin-bottom:14px">Registro completo de verificaciones con la estructura del certificado. {{ bdNota }}</p>
+        <div class="no-print" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+          <input value="{{ bdQ }}" onInput="{{ setBdQ }}" placeholder="Folio, placa, empresa o técnico…" style="flex:1;min-width:240px;font-size:13.5px;padding:9px 12px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#1f2937;font-family:inherit">
+          <sc-for list="{{ bdFiltros }}" as="f" hint-placeholder-count="4">
+            <button onClick="{{ f.go }}" style="font-size:12.5px;font-weight:600;padding:8px 13px;border-radius:999px;border:1px solid {{ f.borde }};background:{{ f.bg }};color:{{ f.color }};cursor:pointer;font-family:inherit">{{ f.label }}</button>
+          </sc-for>
+          <button onClick="{{ toggleVacias }}" style="font-size:12.5px;font-weight:600;padding:8px 13px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;color:#0f2a43;cursor:pointer;font-family:inherit">{{ bdColBtn }}</button>
+          <button onClick="{{ exportarBd }}" style="font-size:12.5px;font-weight:600;padding:8px 13px;border-radius:8px;border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8;cursor:pointer;font-family:inherit">Exportar CSV</button>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:10px;overflow:auto;max-height:640px">
+          <table style="border-collapse:collapse;font-size:11.5px;white-space:nowrap;table-layout:fixed">
+            <thead>
+              <tr>
+                <sc-for list="{{ bdCols }}" as="h" hint-placeholder-count="14">
+                  <th style="background:#f8fafc;color:{{ h.color }};font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;text-align:left;padding:7px 9px;border-bottom:1px solid #e2e8f0;border-right:1px solid #eef2f7;position:sticky;top:0;vertical-align:bottom;width:104px;overflow:hidden;text-overflow:ellipsis">
+                    <div>{{ h.l1 }}</div>
+                    <div style="font-weight:600;color:#94a3b8;font-size:9.5px">{{ h.l2 }}</div>
+                  </th>
+                </sc-for>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ bdFilas }}" as="r" hint-placeholder-count="12">
+                <tr style="background:{{ r.bg }}">
+                  <sc-for list="{{ r.celdas }}" as="c" hint-placeholder-count="14">
+                    <td style="padding:6px 9px;border-bottom:1px solid #eef2f7;border-right:1px solid #f4f7fa;color:{{ c.color }};font-weight:{{ c.peso }};font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis">{{ c.v }}</td>
+                  </sc-for>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap">
+          <p style="font-size:12.5px;color:#64748b;flex:1;min-width:200px">{{ bdConteo }}</p>
+          <div class="no-print" style="display:flex;align-items:center;gap:8px">
+            <button onClick="{{ bdAnt }}" style="font-size:12.5px;font-weight:600;padding:7px 13px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#0f2a43;cursor:pointer;font-family:inherit;opacity:{{ bdAntOn }}">Anterior</button>
+            <span style="font-size:12.5px;color:#475569;font-weight:600">{{ bdPagTxt }}</span>
+            <button onClick="{{ bdSig }}" style="font-size:12.5px;font-weight:600;padding:7px 13px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#0f2a43;cursor:pointer;font-family:inherit;opacity:{{ bdSigOn }}">Siguiente</button>
+          </div>
+        </div>
+      </section>
+    </sc-if>
+
+    <div style="color:#64748b;font-size:12.5px;text-align:center;margin-top:10px">Censercar · informe consolidado de folios</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;umbralRiesgo&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:40,&quot;min&quot;:10,&quot;max&quot;:80,&quot;step&quot;:5,&quot;unit&quot;:&quot;%&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Reglas de análisis&quot;},&quot;diasAlerta&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:120,&quot;min&quot;:30,&quot;max&quot;:365,&quot;step&quot;:15,&quot;unit&quot;:&quot;días&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Reglas de análisis&quot;},&quot;densidad&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;cómoda&quot;,&quot;compacta&quot;],&quot;default&quot;:&quot;cómoda&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Presentación&quot;}}">
+class Component extends DCLogic {
+  state = { D:null, cargando:true, error:null, tab:'hoy', ciclo:'2026', q:'', selId:null,
+            cliQ:'', cliFiltro:'En riesgo', loteFiltro:'Todos', fuente:'folios-data.json', drag:false,
+            bdQ:'', bdFiltro:'Todas', bdVacias:true, bdPag:0 };
+
+  componentDidMount(){ this.cargar(); }
+
+  cargar(){
+    fetch('folios-data.json').then(r=>r.json())
+      .then(D=>this.setState({D, cargando:false, error:null, fuente:'folios-data.json'}))
+      .catch(()=>this.setState({cargando:false, error:'No se pudo cargar folios-data.json. Carga un reporte en la pestaña Datos.'}));
+  }
+
+  ingest(text, nombre){
+    let D=null;
+    try{ D=JSON.parse(text); }catch(e){
+      const re = new RegExp('<' + 'script id="data" type="application/json">([\\s\\S]*?)</' + 'script>');
+      const m = text.match(re);
+      if(m){ try{ D=JSON.parse(m[1]); }catch(e2){} }
+    }
+    if(D && D.resumen && D.lotes) this.setState({D, fuente:nombre, error:null, tab:'hoy', selId:null, cargando:false});
+    else this.setState({error:'No reconocí "'+nombre+'". Se espera el JSON del análisis o el informe HTML con su bloque de datos.'});
+  }
+  leer(file){ if(!file) return; const fr=new FileReader(); fr.onload=()=>this.ingest(String(fr.result), file.name); fr.readAsText(file); }
+
+  fmt(n){ return (n==null||isNaN(n)) ? '—' : Number(n).toLocaleString('es-MX'); }
+  num(f){ return parseInt(String(f).replace(/\D/g,''),10); }
+  agotamiento(D, s){
+    const dd = Math.round((s.quedan_real!=null?s.quedan_real:s.quedan) / Math.max(0.1, s.tasa_diaria));
+    const base = (D.pronostico && D.pronostico.ultima) ? new Date(D.pronostico.ultima+'T00:00:00') : new Date();
+    const f = new Date(base.getTime() + dd*86400000);
+    return { dd, fecha: f.toISOString().slice(0,10) };
+  }
+  colorSerie(t){ return t==='EMISIONES' ? {c:'#1d4ed8', b:'#dbeafe'} : t==='MOTRIZ' ? {c:'#c2410c', b:'#fff7ed'} : {c:'#047857', b:'#ecfdf5'}; }
+
+  csv(nombre, cols, filas){
+    const esc = v => '"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const txt = [cols.map(esc).join(','), ...filas.map(f=>f.map(esc).join(','))].join('\n');
+    const url = URL.createObjectURL(new Blob(['\ufeff'+txt], {type:'text/csv;charset=utf-8'}));
+    const a = document.createElement('a'); a.href=url; a.download=nombre; a.click(); setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  }
+
+  cobertura(D){
+    const B = 120, out = [], usadosPorLote = {}, saltadosPorLote = {};
+    (D.consumo||[]).forEach(c=>{ (usadosPorLote[c.lote] = usadosPorLote[c.lote] || []).push(this.num(c.folio)); });
+    (D.saltados||[]).forEach(s=>{ (saltadosPorLote[s.lote] = saltadosPorLote[s.lote] || []).push(this.num(s.folio)); });
+    (D.lotes||[]).forEach(l=>{
+      const rango = l.folio_del+'-'+l.al_folio, ini = this.num(l.folio_del), n = Math.max(1, l.cantidad||1);
+      const paso = n / B, cubos = Array.from({length:B}, ()=>({u:0,s:0}));
+      (usadosPorLote[rango]||[]).forEach(v=>{ const i=Math.floor((v-ini)/paso); if(i>=0 && i<B) cubos[i].u++; });
+      (saltadosPorLote[rango]||[]).forEach(v=>{ const i=Math.floor((v-ini)/paso); if(i>=0 && i<B) cubos[i].s++; });
+      const segs=[];
+      cubos.forEach((c,i)=>{
+        const bg = c.u>0 && c.u>=c.s ? '#16a34a' : c.s>0 ? '#d97706' : '#e8edf4';
+        const desde = Math.round(ini + i*paso);
+        const tip = (c.u||c.s) ? (c.u+' consumidos · '+c.s+' saltados · desde '+desde) : 'disponible · desde '+desde;
+        const last = segs[segs.length-1];
+        if(last && last.bg===bg && last.tip===tip) last.w += 100/B; else segs.push({bg, w:100/B, tip});
+      });
+      const est = l.estado||'';
+      const col = est==='AGOTADO' ? {c:'#15803d', b:'#dcfce7'} : est==='SIN USO' ? {c:'#b91c1c', b:'#fee2e2'} : {c:'#b45309', b:'#fef3c7'};
+      const cs = this.colorSerie(l.tipo);
+      out.push({ tipo:l.tipo, rango, sub:'factura '+(l.factura||'—')+' · recibido '+(l.fecha_recibidos||'—')+' · ciclo '+l.ciclo+' p'+l.periodo,
+        estado:est, estadoBg:col.b, estadoColor:col.c, tipoBg:cs.b, tipoColor:cs.c,
+        usados:this.fmt(l.usados), saltados:this.fmt(l.saltados), disponibles:this.fmt(l.disponibles),
+        pct:Math.round(l.pct_uso||0), segs, _tipo:l.tipo, _n:l.cantidad });
+    });
+    return out;
+  }
+
+  analizarClientes(D){
+    const u = this.props.umbralRiesgo ?? 40;
+    return (D.clientes && D.clientes.comparativa ? D.clientes.comparativa : []).map(c=>{
+      const caida = c.p1>0 ? (c.p1-c.p2)/c.p1*100 : 0;
+      let estado, color, bg;
+      if(c.p2===0 && c.p1>0){ estado='PERDIDO'; color='#b91c1c'; bg='#fee2e2'; }
+      else if(c.p1===0 && c.p2>0){ estado='NUEVO'; color='#1d4ed8'; bg='#dbeafe'; }
+      else if(caida >= u){ estado='RIESGO ALTO'; color='#c2410c'; bg='#fff7ed'; }
+      else if(caida >= 15){ estado='RIESGO'; color='#b45309'; bg='#fef3c7'; }
+      else if(c.delta > 0){ estado='CRECIÓ'; color='#15803d'; bg='#dcfce7'; }
+      else { estado='ESTABLE'; color='#475569'; bg='#eef2f7'; }
+      return { empresa:c.empresa, p1:c.p1, p2:c.p2, delta:c.delta, estado, color, bg, caida,
+        perdido:Math.max(0, c.p1-c.p2), deltaTxt:(c.delta>0?'+':'')+this.fmt(c.delta),
+        w: Math.min(100, Math.abs(c.delta) / Math.max(1, c.p1, c.p2) * 100) };
+    }).sort((a,b)=>{
+      const r = e => e.estado==='PERDIDO' ? 0 : e.estado==='RIESGO ALTO' ? 1 : e.estado==='RIESGO' ? 2 : e.estado==='ESTABLE' ? 3 : e.estado==='CRECIÓ' ? 4 : 5;
+      return r(a)-r(b) || b.perdido-a.perdido || b.p1-a.p1;
+    });
+  }
+
+  alertas(D, cl){
+    const A=[], limite = this.props.diasAlerta ?? 120;
+    ((D.pronostico&&D.pronostico.series)||[]).forEach(s=>{
+      const ag = this.agotamiento(D, s), dd = ag.dd;
+      if(dd <= limite) A.push({ sev: dd<=60?'ALTA':'MEDIA', color: dd<=60?'#dc2626':'#d97706', bg: dd<=60?'#fff5f5':'#fffbeb',
+        cifra:dd, unidad:'días', titulo:'Serie '+s.serie+' se agota en '+dd+' días',
+        detalle:'Quedan '+this.fmt(s.quedan_real)+' folios reales a un ritmo de '+s.tasa_diaria+' por día. Agotamiento estimado '+ag.fecha+', contado desde el corte del reporte.',
+        accion:'Solicitar '+this.fmt(s.compra_sugerida)+' folios de '+s.serie+' a SICT / imprenta (el trámite tardó 20 a 30 días en los últimos lotes).' });
+    });
+    const perdidos = cl.filter(c=>c.estado==='PERDIDO'), riesgo = cl.filter(c=>c.estado==='RIESGO ALTO');
+    const vol = perdidos.concat(riesgo).reduce((a,c)=>a+c.perdido, 0);
+    if(perdidos.length || riesgo.length) A.push({ sev:'ALTA', color:'#dc2626', bg:'#fff5f5', cifra:this.fmt(vol), unidad:'verificaciones',
+      titulo:perdidos.length+' clientes perdidos y '+riesgo.length+' en riesgo alto',
+      detalle:'Volumen que dejó de verificarse entre el período 1 y el 2. Los mayores: '+cl.slice(0,3).map(c=>c.empresa).join(', ')+'.',
+      accion:'Contacto comercial esta semana; el detalle está en la pestaña Clientes.' });
+    const sal = (D.resumen&&D.resumen.saltados)||0, cons = Math.max(1,(D.resumen&&D.resumen.folios_consumidos)||1);
+    if(sal>0) A.push({ sev: sal>cons*0.5?'ALTA':'MEDIA', color: sal>cons*0.5?'#dc2626':'#d97706', bg: sal>cons*0.5?'#fff5f5':'#fffbeb',
+      cifra:this.fmt(sal), unidad:'folios', titulo:'Folios saltados sin justificar',
+      detalle:'Equivale al '+Math.round(sal/cons*100)+'% de lo consumido, concentrado en '+((D.saltados_por_lote||[]).length)+' lotes.',
+      accion:'Definir la regla: cancelados, extraviados o captura incompleta.' });
+    const sinUso = (D.lotes||[]).filter(l=>l.estado==='SIN USO');
+    if(sinUso.length) A.push({ sev:'MEDIA', color:'#d97706', bg:'#fffbeb', cifra:this.fmt(sinUso.reduce((a,l)=>a+l.cantidad,0)), unidad:'folios',
+      titulo:sinUso.length+' lotes comprados sin un solo folio usado',
+      detalle:'Capital inmovilizado en lotes de ciclos anteriores; faltan reportes de oct-2025 a feb-2026.',
+      accion:'Cargar los reportes faltantes antes de decidir nuevas compras.' });
+    if((D.hallazgos||[]).length) A.push({ sev:'MEDIA', color:'#d97706', bg:'#fffbeb', cifra:D.hallazgos.length, unidad:'hallazgos',
+      titulo:'Errores de captura y fechas inconsistentes', detalle:D.hallazgos.map(h=>h.detalle).join(' · '),
+      accion:'Corregir en el sistema de captura y volver a generar el reporte.' });
+    const ctrl = (D.control && D.control.data && D.control.data['2026']) || null;
+    const val = ctrl ? ctrl.p2.validos : 0;
+    A.push({ sev: val?'INFO':'ALTA', color: val?'#2563eb':'#dc2626', bg: val?'#f5f9ff':'#fff5f5', cifra:this.fmt(val), unidad:'folios válidos',
+      titulo: val ? 'Vigentes solo en: '+((D.control.lotes_validos||[]).map(l=>l.tipo).join(', ')||'ninguna serie') : 'Sin folios válidos vigentes',
+      detalle:'Solo los lotes del 2º período del ciclo 2026 son válidos para verificar hoy; las demás series operan con folios de ciclo anterior.',
+      accion: val ? 'Confirmar lote vigente para emisiones y motriz.' : 'Gestionar compra inmediata del período vigente.' });
+    return A;
+  }
+
+  renderVals(){
+    const D = this.state.D, S = this.state.tab, compacta = this.props.densidad === 'compacta';
+    const tabs = [['hoy','Hoy'],['cobertura','Cobertura'],['traza','Trazabilidad'],['clientes','Clientes'],['produccion','Producción'],['pronostico','Pronóstico'],['compras','Compras'],['datos','Datos'],['bd','BD']]
+      .map(t=>({ label:t[1], borde: S===t[0]?'#2563eb':'transparent', color: S===t[0]?'#0f2a43':'#64748b', go:()=>this.setState({tab:t[0]}) }));
+
+    const base = {
+      tabs, cargando:this.state.cargando && !D, error:this.state.error, fuente:this.state.fuente,
+      esHoy:S==='hoy', esCobertura:S==='cobertura', esTraza:S==='traza', esClientes:S==='clientes',
+      esPronostico:S==='pronostico', esProduccion:S==='produccion', esCompras:S==='compras', esDatos:S==='datos', esBd:S==='bd',
+      imprimir:()=>window.print(), recargar:()=>this.cargar(),
+      dropBorde:this.state.drag?'#2563eb':'#cbd5e1', dropBg:this.state.drag?'#f0f7ff':'#fbfcfe',
+      onDragOver:e=>{ e.preventDefault(); if(!this.state.drag) this.setState({drag:true}); },
+      onDragLeave:()=>this.setState({drag:false}),
+      onDrop:e=>{ e.preventDefault(); this.setState({drag:false}); this.leer(e.dataTransfer.files[0]); },
+      onFile:e=>this.leer(e.target.files[0]),
+      exportar:()=>{}, exportarLotes:()=>{}, exportarConsumo:()=>{}
+    };
+    if(!D) return { ...base, meta:'', alertas:[], kpis:[], periodos:[], ciclos:[], cobertura:[], filtrosLote:[],
+      resultados:[], sel:null, detalle:[], historial:[], clientes:[], cliKpis:[], cartera:[], filtrosCli:[], series:[], meses:[],
+      semaforo:[], semTotal:'', semComprados:'', semSaltados:'', diasUmbral:120,
+      tecnicos:[], empresas:[], dias:[], resultadosFm:[], prodKpis:[], dataInfo:[],
+      bdCols:[], bdFilas:[], bdFiltros:[], bdNota:'', bdConteo:'', bdColBtn:'', exportarBd:()=>{},
+      bdPagTxt:'', bdAnt:()=>{}, bdSig:()=>{}, bdAntOn:0.35, bdSigOn:0.35,
+      comprasKpis:[], comprasCols:[], comprasFilas:[], comprasTot:{}, comprasNota:'', exportarCompras:()=>{},
+      dgFormula:[], dgSeries:[], dgFilas:[], dgTot:{}, dgEjemplo:[], dgNota:'', dgConsumo:'', dgCols:[],
+      vidaLotes:[], vidaMeses:[], vidaKpis:[] };
+
+    const R = D.resumen;
+    const necesitaCl = S==='hoy' || S==='clientes' || S==='produccion';
+    const cl = necesitaCl ? this.analizarClientes(D) : [];
+    const alertas = S==='hoy' ? this.alertas(D, cl) : [];
+    const diasUmbral = this.props.diasAlerta ?? 120;
+    const semaforo = S!=='hoy' ? [] : ((D.pronostico&&D.pronostico.series)||[]).map(s=>{
+      const ag = this.agotamiento(D, s), dd = ag.dd;
+      const luz = dd<=60 ? '#dc2626' : dd<=diasUmbral ? '#d97706' : '#16a34a';
+      return { serie:s.serie, quedan:this.fmt(s.quedan_real), luz,
+        halo: dd<=60 ? 'rgba(220,38,38,.16)' : dd<=diasUmbral ? 'rgba(217,119,6,.16)' : 'rgba(22,163,74,.16)',
+        fondo: dd<=60 ? '#fff7f7' : dd<=diasUmbral ? '#fffcf5' : '#f7fdf9',
+        badgeBg: dd<=60 ? '#fee2e2' : dd<=diasUmbral ? '#fef3c7' : '#dcfce7',
+        estado: dd<=60 ? 'CRÍTICO' : dd<=diasUmbral ? 'VIGILAR' : 'SUFICIENTE',
+        w: Math.min(100, s.quedan_real/Math.max(1,s.comprados_activos)*100),
+        detalle: dd+' días al ritmo de '+s.tasa_diaria+'/día · se agota el '+ag.fecha };
+    });
+    const semTotal = ((D.pronostico&&D.pronostico.series)||[]).reduce((a,s)=>a+s.quedan_real,0);
+    const kpis = [
+      {v:this.fmt(R.folios_comprados), l:'Comprados', color:'#0f2a43'},
+      {v:this.fmt(R.folios_consumidos), l:'Consumidos', color:'#16a34a'},
+      {v:this.fmt(R.saltados), l:'Saltados', color:'#d97706'},
+      {v:this.fmt(R.disponibles), l:'Disponibles', color:'#0f2a43'},
+      {v:this.fmt(R.fuera_de_rango), l:'Fuera de rango', color:'#dc2626'},
+      {v:this.fmt(R.hallazgos), l:'Hallazgos', color:'#dc2626'}
+    ];
+
+    const d = ((D.control&&D.control.data)||{})[this.state.ciclo] || {p1:{comprados:0,consumidos:0,validos:0},p2:{comprados:0,consumidos:0,validos:0}};
+    const tope = Math.max(1, d.p1.comprados, d.p2.comprados);
+    const per = (p, nombre, rango) => ({ nombre, rango,
+      badge: p.validos>0 ? 'VIGENTE' : 'NO VÁLIDO', badgeBg: p.validos>0?'#dcfce7':'#eef2f7', badgeColor: p.validos>0?'#15803d':'#475569',
+      barras:[
+        {lbl:'Comprados', v:this.fmt(p.comprados), w:Math.min(100,p.comprados/tope*100), color:'#2563eb'},
+        {lbl:'Consumidos', v:this.fmt(p.consumidos), w:Math.min(100,p.consumidos/tope*100), color:'#16a34a'},
+        {lbl:'Válidos hoy', v:this.fmt(p.validos), w:Math.min(100,p.validos/tope*100), color:'#d97706'}
+      ]});
+
+    const cobTodos = S==='cobertura' ? this.cobertura(D) : [];
+    const cobertura = this.state.loteFiltro==='Todos' ? cobTodos : cobTodos.filter(l=>l._tipo===this.state.loteFiltro);
+    const filtrosLote = ['Todos','EMISIONES','ARRASTRE','MOTRIZ'].map(f=>({ label:f==='Todos'?'Todos los lotes':f,
+      borde:this.state.loteFiltro===f?'#2563eb':'#e2e8f0', bg:this.state.loteFiltro===f?'#eff6ff':'#fff',
+      color:this.state.loteFiltro===f?'#1d4ed8':'#64748b', go:()=>this.setState({loteFiltro:f}) }));
+
+    const q = this.state.q.trim().toUpperCase();
+    const hits = S!=='traza' ? [] : q ? (D.consumo||[]).filter(c=>
+        String(c.folio).toUpperCase().indexOf(q)>=0 || String(c.placas||'').toUpperCase().indexOf(q)>=0 || String(c.empresa||'').toUpperCase().indexOf(q)>=0)
+      : (D.consumo||[]).slice(-160).reverse();
+    const limite = compacta ? 80 : 160;
+    const resultados = hits.slice(0, limite).map((c,i)=>{
+      const cs = this.colorSerie(c.serie), id = c.serie+':'+c.folio;
+      return { folio:c.folio, serie:c.serie, placas:c.placas||'—', empresa:c.empresa||'—', fecha:c.fecha,
+        tipoBg:cs.b, tipoColor:cs.c, bg: this.state.selId===id ? '#eff6ff' : (i%2?'#fbfcfe':'#ffffff'),
+        go:()=>this.setState({selId:id}) };
+    });
+    const sel = (D.consumo||[]).find(c=>(c.serie+':'+c.folio)===this.state.selId) || null;
+    let detalle=[], historial=[];
+    if(sel){
+      const lote = (D.lotes||[]).find(l=>(l.folio_del+'-'+l.al_folio)===sel.lote);
+      detalle = [
+        {k:'Serie', v:sel.serie, color:this.colorSerie(sel.serie).c},
+        {k:'Verificación', v:sel.tipo_verif==='EC'?'Emisiones contaminantes':'Físico-mecánica', color:'#0f2a43'},
+        {k:'Placa', v:sel.placas||'—', color:'#0f2a43'},
+        {k:'Cliente', v:sel.empresa||'—', color:'#0f2a43'},
+        {k:'Fecha', v:sel.fecha, color:'#0f2a43'},
+        {k:'Técnico', v:sel.tecnico||'sin capturar', color:sel.tecnico?'#0f2a43':'#b45309'},
+        {k:'Resultado', v:String(sel.resultado), color:'#0f2a43'},
+        {k:'Lote', v:sel.lote, color:'#0f2a43'},
+        {k:'Factura del lote', v:lote?lote.factura:'—', color:'#0f2a43'},
+        {k:'Ciclo / período', v:'ciclo '+sel.ciclo+' · p'+sel.periodo, color:'#0f2a43'},
+        {k:'En rango', v:sel.en_rango?'sí':'no — fuera de lote', color:sel.en_rango?'#15803d':'#b91c1c'},
+        {k:'Válido hoy', v:sel.valido?'sí':'no (ciclo anterior)', color:sel.valido?'#15803d':'#b45309'}
+      ];
+      historial = (D.consumo||[]).filter(c=>c.placas && c.placas===sel.placas)
+        .map(c=>({ folio:c.folio, txt:(c.tipo_verif==='EC'?'Emisiones':'Físico-mec.')+' · '+c.fecha }));
+    }
+
+    const cq = this.state.cliQ.trim().toUpperCase(), cf = this.state.cliFiltro;
+    const clientesFil = (S!=='clientes' ? [] : cl).filter(c=>{
+      if(cq && c.empresa.toUpperCase().indexOf(cq)<0) return false;
+      if(cf==='En riesgo') return c.estado==='RIESGO ALTO' || c.estado==='RIESGO' || c.estado==='PERDIDO';
+      if(cf==='Perdidos') return c.estado==='PERDIDO';
+      if(cf==='Nuevos') return c.estado==='NUEVO';
+      if(cf==='Creció') return c.estado==='CRECIÓ';
+      return true;
+    });
+    const filtrosCli = ['En riesgo','Perdidos','Nuevos','Creció','Todos'].map(f=>({ label:f,
+      borde:cf===f?'#2563eb':'#e2e8f0', bg:cf===f?'#eff6ff':'#fff', color:cf===f?'#1d4ed8':'#64748b',
+      go:()=>this.setState({cliFiltro:f}) }));
+    const perdidos = cl.filter(c=>c.estado==='PERDIDO'), riesgoA = cl.filter(c=>c.estado==='RIESGO ALTO');
+    const cliKpis = [
+      {v:this.fmt(perdidos.length), l:'Clientes perdidos', color:'#dc2626'},
+      {v:this.fmt(riesgoA.length), l:'Riesgo alto', color:'#c2410c'},
+      {v:this.fmt(perdidos.concat(riesgoA).reduce((a,c)=>a+c.perdido,0)), l:'Verificaciones en riesgo', color:'#dc2626'},
+      {v:this.fmt(cl.filter(c=>c.estado==='NUEVO').length), l:'Clientes nuevos', color:'#2563eb'},
+      {v:this.fmt((D.clientes&&D.clientes.resumen&&D.clientes.resumen.total)||cl.length), l:'Empresas atendidas', color:'#0f2a43'}
+    ];
+
+    const series = ((D.pronostico&&D.pronostico.series)||[]).map(s=>{
+      const ag = this.agotamiento(D, s), dd = ag.dd, cs = this.colorSerie(s.serie);
+      return { serie:s.serie, color: dd<=60?'#dc2626':dd<=120?'#d97706':cs.c, bg: dd<=60?'#fee2e2':dd<=120?'#fef3c7':cs.b,
+        riesgo: dd<=60 ? 'CRÍTICO' : dd<=120 ? 'VIGILAR' : 'ESTABLE',
+        wUsados: s.usados/Math.max(1,s.comprados_activos)*100,
+        wSaltados: Math.max(0, s.quedan - s.quedan_real)/Math.max(1,s.comprados_activos)*100,
+        filas:[
+          {k:'Comprados activos', v:this.fmt(s.comprados_activos), color:'#0f2a43'},
+          {k:'Usados', v:this.fmt(s.usados), color:'#15803d'},
+          {k:'Quedan (máx)', v:this.fmt(s.quedan), color:'#0f2a43'},
+          {k:'Quedan real', v:this.fmt(s.quedan_real), color:'#b45309'},
+          {k:'Ritmo diario', v:s.tasa_diaria+' / día', color:'#0f2a43'},
+          {k:'Se agota (real)', v:ag.fecha+' · '+dd+' d', color: dd<=60?'#b91c1c':'#0f2a43'},
+          {k:'Se agota (nominal)', v:s.fecha_agotamiento, color:'#64748b'},
+          {k:'Próximo mes', v:this.fmt(s.pronostico_prox_mes)+' folios', color:'#0f2a43'},
+          {k:'Compra sugerida', v:this.fmt(s.compra_sugerida), color:'#1d4ed8'}
+        ]};
+    });
+    const tabla = (D.pronostico&&D.pronostico.mensual_tabla)||[];
+    const maxMes = Math.max(1, ...tabla.map(m=>m.total));
+    const meses = tabla.map(m=>({ etiqueta:m.mes+' · ciclo '+m.ciclo+' p'+m.periodo, total:this.fmt(m.total),
+      wE:m.EMISIONES/maxMes*100, wA:m.ARRASTRE/maxMes*100, wM:m.MOTRIZ/maxMes*100 }));
+
+    const P = S==='produccion' ? (D.produccion || {}) : {};
+    const tecList = P.tecnicos || [], maxTec = Math.max(1, ...tecList.map(t=>t.c));
+    const totalTec = Math.max(1, tecList.reduce((a,t)=>a+t.c,0));
+    const tecnicos = tecList.map(t=>({ n:t.n||'sin capturar', c:this.fmt(t.c), w:t.c/maxTec*100,
+      pct:Math.round(t.c/totalTec*100), color: t.c>=maxTec*0.8 ? '#2563eb' : t.c>=maxTec*0.5 ? '#0d9488' : '#94a3b8' }));
+    const sinTecnico = S==='produccion' ? (D.consumo||[]).filter(c=>!c.tecnico).length : 0;
+    const notaTecnicos = sinTecnico ? this.fmt(sinTecnico)+' verificaciones llegaron sin técnico capturado y no aparecen aquí.' : '';
+
+    const estadoPorEmpresa = {};
+    cl.forEach(c=>{ estadoPorEmpresa[c.empresa] = c.estado; });
+    const empList = (P.empresas || []).slice(0,15), maxEmp = Math.max(1, ...empList.map(e=>e.c));
+    const empresas = empList.map(e=>{
+      const est = estadoPorEmpresa[e.n] || '';
+      const color = est==='PERDIDO' ? '#dc2626' : est==='RIESGO ALTO' ? '#c2410c' : est==='CRECIÓ' ? '#16a34a' : est==='NUEVO' ? '#2563eb' : '#94a3b8';
+      return { n:e.n, c:this.fmt(e.c), w:e.c/maxEmp*100, estado:est.toLowerCase(), color };
+    });
+
+    const diaList = P.por_dia || [], maxDia = Math.max(1, ...diaList.map(d2=>d2.total));
+    const dias = diaList.map(d2=>({ hEc:d2.ec/maxDia*100, hFm:d2.fm/maxDia*100,
+      tip:d2.fecha+' · '+d2.total+' verificaciones ('+d2.ec+' EC / '+d2.fm+' FM)' }));
+    const diaInicio = diaList.length ? diaList[0].fecha : '—';
+    const diaFin = diaList.length ? diaList[diaList.length-1].fecha : '—';
+
+    const porSerie = (tv, sr) => { const m={};
+      (D.consumo||[]).forEach(c=>{ if(c.tipo_verif===tv && (!sr || c.serie===sr)) m[c.resultado]=(m[c.resultado]||0)+1; });
+      return Object.keys(m).map(k=>({n:k, c:m[k]})).sort((a,b)=>b.c-a.c); };
+    const fmList = S!=='produccion' ? [] : porSerie('EC').map(r=>({...r, s:'Emisiones'}))
+      .concat(porSerie('FM','ARRASTRE').map(r=>({...r, s:'Físico-mec. arrastre'})))
+      .concat(porSerie('FM','MOTRIZ').map(r=>({...r, s:'Físico-mec. motriz'})));
+    const totalRes = Math.max(1, fmList.reduce((a,r)=>a+r.c,0));
+    const resultadosFm = fmList.map(r=>({ n:r.s+' · '+r.n, c:this.fmt(r.c), w:r.c/totalRes*100, pct:Math.round(r.c/totalRes*1000)/10,
+      color: r.n.indexOf('CANCEL')>=0 ? '#dc2626' : r.s==='Emisiones' ? '#2563eb' : r.s.indexOf('arrastre')>=0 ? '#047857' : '#c2410c' }));
+    const promedioDia = diaList.length ? Math.round(diaList.reduce((a,d2)=>a+d2.total,0)/diaList.length) : 0;
+    const cuentaSerie = sr => (D.consumo||[]).filter(c=>c.tipo_verif==='FM' && c.serie===sr).length;
+    const prodKpis = S!=='produccion' ? [] : [
+      {v:this.fmt(P.ec_total), l:'Emisiones', color:'#2563eb'},
+      {v:this.fmt(cuentaSerie('ARRASTRE')), l:'FM arrastre', color:'#047857'},
+      {v:this.fmt(cuentaSerie('MOTRIZ')), l:'FM motriz', color:'#c2410c'},
+      {v:this.fmt(P.fm_total), l:'FM total', color:'#0d9488'},
+      {v:this.fmt(promedioDia), l:'Prom. por día', color:'#0f2a43'}
+    ];
+
+    const CR = (D.clientes && D.clientes.resumen) || {};
+    const cartera = [
+      {v:this.fmt(CR.nuevas), l:'empresas nuevas en el período 2', color:'#2563eb'},
+      {v:this.fmt(CR.perdidas), l:'empresas que dejaron de venir', color:'#dc2626'},
+      {v:this.fmt(CR.crecieron), l:'empresas que aumentaron volumen', color:'#16a34a'},
+      {v:this.fmt(CR.bajaron), l:'empresas que bajaron volumen', color:'#d97706'},
+      {v:this.fmt(CR.activos_p1)+' → '+this.fmt(CR.activos_p2), l:'activas en P1 → P2', color:'#0f2a43'}
+    ];
+
+    // ---- BD: estructura del certificado ----
+    const BD_COLS = [
+      ['ITEM','', r=>r.item, 'num'],
+      ['FOLIO DE','CERTIFICADO', r=>r.c.folio, 'clave'],
+      ['TIPO DE','VERIFICACIÓN', r=>r.c.tipo_verif==='EC'?'EMISIONES':'FÍSICO-MEC.', 'txt'],
+      ['FECHA','', r=>r.c.fecha, 'txt'],
+      ['HORA','', r=>r.c.hora||'', 'txt'],
+      ['PLACAS','', r=>r.c.placas, 'clave'],
+      ['SERIE O NIV','(VIN)', r=>r.c.vin||'', 'txt'],
+      ['MARCA','', r=>r.c.marca||'', 'txt'],
+      ['SUBMARCA','', r=>r.c.submarca||'', 'txt'],
+      ['AÑO','MODELO', r=>r.c.modelo||'', 'txt'],
+      ['TIPO DE','VEHÍCULO', r=>r.c.tipo_vehiculo||'', 'txt'],
+      ['EJES','', r=>r.c.ejes||'', 'txt'],
+      ['CAPACIDAD','kg', r=>r.c.cap_kg||'', 'txt'],
+      ['PROPIETARIO','razón social', r=>r.c.empresa, 'txt'],
+      ['RFC','', r=>r.c.rfc||'', 'txt'],
+      ['TARJETA DE','CIRCULACIÓN', r=>r.c.tarjeta||'', 'txt'],
+      ['SERVICIO','', r=>r.c.servicio||'', 'txt'],
+      ['SE','PRESENTÓ', r=>r.c.presentado||'', 'txt'],
+      ['ODÓMETRO','', r=>r.c.odometro||'', 'txt'],
+      ['VERIFICACIÓN','anterior', r=>r.c.fecha_ant||'', 'txt'],
+      ['LMP','', r=>r.c.lmp||'', 'txt'],
+      ['PROMEDIO','opacidad', r=>r.c.promedio||'', 'txt'],
+      ['RESULTADO','', r=>String(r.c.resultado), 'res'],
+      ['TÉCNICO','', r=>r.c.tecnico, 'txt'],
+      ['UNIDAD DE','VERIFICACIÓN', r=>r.c.uv||r.c.centro||'', 'txt'],
+      ['SERIE DE','FOLIO', r=>r.c.serie, 'txt'],
+      ['LOTE','', r=>r.c.lote, 'txt'],
+      ['PERÍODO','', r=>'ciclo '+r.c.ciclo+' · p'+r.c.periodo, 'txt'],
+      ['FACTURA','DEL LOTE', r=>r.factura, 'txt']
+    ];
+    const bdq = this.state.bdQ.trim().toUpperCase(), bdf = this.state.bdFiltro;
+    const facturaPorLote = {};
+    (D.lotes||[]).forEach(l=>{ facturaPorLote[l.folio_del+'-'+l.al_folio] = l.factura; });
+    const bdBase = (S!=='bd' ? [] : (D.consumo||[])).filter(c=>{
+      if(bdf==='Emisiones' && c.tipo_verif!=='EC') return false;
+      if(bdf==='Físico-mec.' && c.tipo_verif!=='FM') return false;
+      if(bdf==='Fuera de lote' && c.en_rango) return false;
+      if(!bdq) return true;
+      return String(c.folio).toUpperCase().indexOf(bdq)>=0 || String(c.placas||'').toUpperCase().indexOf(bdq)>=0
+        || String(c.empresa||'').toUpperCase().indexOf(bdq)>=0 || String(c.tecnico||'').toUpperCase().indexOf(bdq)>=0;
+    });
+    const bdTope = 40, bdPag = this.state.bdPag, bdDesde = bdPag*bdTope;
+    const muestraBd = bdBase.slice(0,50);
+    const bdColsUsadas = this.state.bdVacias ? BD_COLS : BD_COLS.filter(c=>
+      muestraBd.length===0 || muestraBd.some(x=>c[2]({c:x, item:1, factura:facturaPorLote[x.lote]||''}) !== ''));
+    const bdColsFinal = bdColsUsadas.map(c=>({ l1:c[0], l2:c[1], color:'#0f2a43' }));
+    const bdFilas = bdBase.slice(bdDesde, bdDesde+bdTope).map((c,i)=>({
+      bg: i%2 ? '#fbfcfe' : '#ffffff',
+      celdas: bdColsUsadas.map(col=>{
+        const v = col[2]({ c, item:bdDesde+i+1, factura:facturaPorLote[c.lote]||'' });
+        const vacio = v==='' || v==null;
+        const color = vacio ? '#cbd5e1' : col[3]==='clave' ? '#0f2a43' : col[3]==='res'
+          ? (String(v)==='CANCELADO' ? '#b91c1c' : String(v)==='APROBADO' ? '#15803d' : '#475569') : '#475569';
+        return { v: vacio ? '—' : v, color, peso: col[3]==='clave' ? '700' : '400' };
+      })
+    }));
+    const bdFiltros = ['Todas','Emisiones','Físico-mec.','Fuera de lote'].map(f=>({ label:f,
+      borde:bdf===f?'#2563eb':'#e2e8f0', bg:bdf===f?'#eff6ff':'#fff', color:bdf===f?'#1d4ed8':'#64748b',
+      go:()=>this.setState({bdFiltro:f, bdPag:0}) }));
+    const bdPaginas = Math.max(1, Math.ceil(bdBase.length/bdTope));
+
+    const dinero = n => n==null ? '—' : '$'+Number(n).toLocaleString('es-MX',{minimumFractionDigits:2, maximumFractionDigits:2});
+    // ---- Compras ----
+    const CP = D.compras || {};
+    const comprasKpis = [
+      {v:dinero(CP.total), l:'Inversión total en folios', color:'#0f2a43'},
+      {v:dinero(CP.total_sict), l:'Pagado a SICT', color:'#2563eb'},
+      {v:dinero(CP.total_imprenta), l:'Pagado a imprenta', color:'#0d9488'},
+      {v:dinero(CP.costo_folio), l:'Costo por folio', color:'#0f2a43'},
+      {v:dinero(CP.desperdicio), l:'Valor de folios saltados', color:'#dc2626'}
+    ];
+    const comprasCols = [
+      ['CANTIDAD','','right'],['TIPO','','left'],['PETICIÓN','ing. Briones','left'],
+      ['PAGO SICT','','right'],['FECHA','pago SICT','left'],['PAGO','imprenta','right'],['FECHA','pago imprenta','left'],
+      ['RECIBIDOS','por SICT','left'],['FACTURA','imprenta','left'],['FOLIO DEL – AL','','left'],
+      ['COSTO','total','right'],['COSTO','por folio','right']
+    ].map(c=>({l1:c[0], l2:c[1], a:c[2]}));
+    const lotesOrden = (D.lotes||[]).slice().sort((a,b)=>(a.fecha_peticion||'').localeCompare(b.fecha_peticion||'') || a.tipo.localeCompare(b.tipo));
+    const comprasFilas = lotesOrden.map((l,i)=>{
+      const cs = this.colorSerie(l.tipo);
+      const tarde = l.fecha_recibidos && l.fecha_peticion && l.fecha_recibidos < l.fecha_peticion;
+      return { bg: i%2?'#fbfcfe':'#ffffff', cantidad:this.fmt(l.cantidad), tipo:l.tipo, tipoBg:cs.b, tipoColor:cs.c,
+        peticion:l.fecha_peticion||'—', pcolor:'#0f2a43',
+        sict:dinero(l.pago_sict), fsict:l.fecha_pago_sict||'—',
+        imp:dinero(l.pago_imprenta), fimp:l.fecha_pago_imprenta||'—',
+        recibido:(l.fecha_recibidos||'—')+(tarde?' ⚠':''), rcolor: tarde?'#b91c1c':'#475569',
+        factura:l.factura||'—', rango:l.folio_del+' – '+l.al_folio,
+        total:dinero(l.costo_total), unitario:dinero(l.costo_folio) };
+    });
+    const comprasTot = { folios:this.fmt(CP.folios), sict:dinero(CP.total_sict), imp:dinero(CP.total_imprenta),
+      total:dinero(CP.total), unitario:dinero(CP.costo_folio) };
+    const comprasNota = (D.lotes||[]).filter(l=>l.fecha_recibidos && l.fecha_peticion && l.fecha_recibidos < l.fecha_peticion).length
+      ? 'Las fechas marcadas con ⚠ tienen recepción anterior a la petición: revisar el año capturado.' : '';
+
+    // ---- Vida de los lotes (pestaña Datos) ----
+    let vidaLotes=[], vidaMeses=[], vidaKpis=[];
+    if(S==='datos'){
+      const dOf = s => new Date(s+'T00:00:00').getTime();
+      const dias = (a,b) => Math.round((dOf(b)-dOf(a))/86400000);
+      const usoPorLote = {};
+      (D.consumo||[]).forEach(c=>{ if(!c.en_rango) return;
+        const u = usoPorLote[c.lote] = usoPorLote[c.lote] || {ini:c.fecha, fin:c.fecha};
+        if(c.fecha < u.ini) u.ini = c.fecha; if(c.fecha > u.fin) u.fin = c.fecha; });
+      const hoy = D.generado || (D.pronostico&&D.pronostico.ultima);
+      const recOk = l => (l.fecha_recibidos && l.fecha_peticion && l.fecha_recibidos < l.fecha_peticion) ? null : l.fecha_recibidos;
+      const todas = [];
+      (D.lotes||[]).forEach(l=>{ [l.fecha_peticion, recOk(l)].forEach(f=>{ if(f) todas.push(f); }); });
+      Object.keys(usoPorLote).forEach(k=>{ todas.push(usoPorLote[k].ini, usoPorLote[k].fin); });
+      todas.push(hoy);
+      const min = todas.slice().sort()[0], max = todas.slice().sort()[todas.length-1];
+      const t0 = dOf(min), span = Math.max(1, dOf(max)-t0);
+      const pos = f => (dOf(f)-t0)/span*100;
+      const cursor = new Date(t0); cursor.setUTCDate(1);
+      const finMes = dOf(max);
+      while(cursor.getTime() <= finMes){
+        vidaMeses.push({ l: ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][cursor.getUTCMonth()] + (cursor.getUTCMonth()===0 ? " '"+String(cursor.getUTCFullYear()).slice(2) : '') });
+        cursor.setUTCMonth(cursor.getUTCMonth()+1);
+      }
+      const orden = (D.lotes||[]).slice().sort((a,b)=>(a.fecha_peticion||'').localeCompare(b.fecha_peticion||'') || a.tipo.localeCompare(b.tipo));
+      vidaLotes = orden.map(l=>{
+        const k = l.folio_del+'-'+l.al_folio, u = usoPorLote[k];
+        const cs = this.colorSerie(l.tipo);
+        const pet = l.fecha_peticion, rec = recOk(l);
+        const tramX = pet ? pos(pet) : 0;
+        const tramW = pet && rec ? Math.max(0.4, pos(rec)-pos(pet)) : 0;
+        const usoX = u ? pos(u.ini) : 0, usoW = u ? Math.max(0.6, pos(u.fin)-pos(u.ini)) : 0;
+        const vida = u ? dias(u.ini, u.fin)+1 : 0;
+        return { tipoCorto: l.tipo==='EMISIONES'?'EMI':l.tipo==='ARRASTRE'?'ARR':'MOT',
+          tipoBg:cs.b, tipoColor:cs.c, rango:l.folio_del+'–'+l.al_folio, color:cs.c,
+          tramiteX:tramX, tramiteW:tramW, tieneUso: !!u, sinUso: !u,
+          tramiteTip: pet ? 'Pedido '+pet+(rec?' · recibido '+rec+' ('+dias(pet,rec)+' días de trámite)':' · fecha de recepción inconsistente')  : 'sin fecha de petición',
+          usoX, usoW,
+          diasDentro: u && usoW >= 6 ? vida+' d' : '',
+          diasFuera: u && usoW < 6 ? vida+' d' : '',
+          diasFueraRight: u ? Math.max(0, Math.min(94, 100 - usoX)) : 0,
+          usoTip: u ? 'Primer folio '+u.ini+' · último '+u.fin+' · '+vida+' días de vida · '+this.fmt(l.usados)+' folios' : 'sin consumo registrado',
+          agotado: l.estado==='AGOTADO' && !!u, finX: u ? Math.min(99, pos(u.fin)) : 0,
+          agotadoTip: u ? 'Lote agotado el '+u.fin : '' };
+      });
+      const conUso = orden.filter(l=>usoPorLote[l.folio_del+'-'+l.al_folio]);
+      const vidas = conUso.map(l=>{ const u=usoPorLote[l.folio_del+'-'+l.al_folio]; return dias(u.ini,u.fin)+1; });
+      const tramites = orden.filter(l=>l.fecha_peticion && recOk(l) && recOk(l)>l.fecha_peticion)
+        .map(l=>dias(l.fecha_peticion, recOk(l)));
+      const espera = orden.filter(l=>recOk(l) && usoPorLote[l.folio_del+'-'+l.al_folio] && usoPorLote[l.folio_del+'-'+l.al_folio].ini > recOk(l))
+        .map(l=>dias(recOk(l), usoPorLote[l.folio_del+'-'+l.al_folio].ini));
+      const prom = a => a.length ? Math.round(a.reduce((x,y)=>x+y,0)/a.length) : 0;
+      vidaKpis = [
+        {v:prom(vidas)+' d', l:'Vida media de un lote', color:'#0f2a43', sub:'del primer al último folio usado'},
+        {v:prom(tramites)+' d', l:'Trámite medio', color:'#2563eb', sub:'de la petición a la recepción'},
+        {v:prom(espera)+' d', l:'Espera en almacén', color:'#d97706', sub:'de recibido a primer uso'},
+        {v:(D.lotes||[]).filter(l=>l.usados===0).length, l:'Lotes sin estrenar', color:'#dc2626', sub:'nunca se usó un folio'}
+      ];
+    }
+
+    // ---- Desglose (pestaña Datos) ----
+    let dgFormula=[], dgSeries=[], dgFilas=[], dgTot={}, dgEjemplo=[], dgNota='', dgConsumo='';
+    if(S==='datos'){
+      const numF = f => parseInt(String(f).replace(/\D/g,''),10);
+      const tot = { cantidad:0, usados:0, saltados:0, disponibles:0 };
+      (D.lotes||[]).forEach(l=>{ tot.cantidad+=l.cantidad; tot.usados+=l.usados; tot.saltados+=l.saltados; tot.disponibles+=l.disponibles; });
+      const nFuera = (D.consumo||[]).filter(c=>!c.en_rango).length;
+      dgConsumo = this.fmt((D.consumo||[]).length) + (nFuera ? ' verificaciones cargadas dicen qué folio se usó. '+nFuera+' de ellas quedan fuera de la cuenta de lotes porque su folio se capturó con seis dígitos ('+(D.consumo||[]).filter(c=>!c.en_rango).map(c=>c.folio).join(', ')+'), así que los folios usados dentro de lotes son '+this.fmt(tot.usados)+'' : ' verificaciones cargadas dicen qué folio se usó');
+      const fuera = (D.consumo||[]).filter(c=>!c.en_rango).length;
+      dgFormula = [
+        {v:this.fmt(tot.cantidad), l:'Comprados', sub:'15 lotes de imprenta', color:'#0f2a43', bg:'#fbfcfe', borde:'#e2e8f0', op:'−'},
+        {v:this.fmt(tot.usados), l:'Usados', sub: fuera ? this.fmt((D.consumo||[]).length)+' verificaciones − '+fuera+' fuera de lote' : 'folios en los reportes', color:'#15803d', bg:'#f7fdf9', borde:'#bbf7d0', op:'−'},
+        {v:this.fmt(tot.saltados), l:'Saltados', sub:'huecos en la secuencia', color:'#b45309', bg:'#fffcf5', borde:'#fde68a', op:'='},
+        {v:this.fmt(tot.disponibles), l:'Disponibles', sub:'inventario real', color:'#1d4ed8', bg:'#f5f9ff', borde:'#bfdbfe', op:''}
+      ];
+      dgSeries = ['EMISIONES','MOTRIZ','ARRASTRE'].map(t=>{
+        const ls = (D.lotes||[]).filter(l=>l.tipo===t);
+        const c = ls.reduce((a,l)=>a+l.cantidad,0), u = ls.reduce((a,l)=>a+l.usados,0);
+        const sa = ls.reduce((a,l)=>a+l.saltados,0), di = ls.reduce((a,l)=>a+l.disponibles,0);
+        const cs = this.colorSerie(t), pc = n => Math.round(n/Math.max(1,c)*1000)/10;
+        return { serie:t, tipoBg:cs.b, tipoColor:cs.c, comprados:this.fmt(c),
+          wUsados:u/Math.max(1,c)*100, wSaltados:sa/Math.max(1,c)*100, wLibres:di/Math.max(1,c)*100,
+          filas:[ {l:'Usados', v:this.fmt(u), pct:pc(u), color:'#16a34a'},
+                  {l:'Saltados', v:this.fmt(sa), pct:pc(sa), color:'#d97706'},
+                  {l:'Disponibles', v:this.fmt(di), pct:pc(di), color:'#cbd5e1'} ] };
+      });
+      const usadosSet = {};
+      (D.consumo||[]).forEach(c=>{ if(c.en_rango) (usadosSet[c.lote]=usadosSet[c.lote]||new Set()).add(numF(c.folio)); });
+      dgFilas = (D.lotes||[]).map((l,i)=>{
+        const k = l.folio_del+'-'+l.al_folio, u = usadosSet[k];
+        const ini = numF(l.folio_del), mx = u && u.size ? Math.max.apply(null, Array.from(u)) : null;
+        const cs = this.colorSerie(l.tipo);
+        const est = l.estado==='AGOTADO' ? {c:'#15803d',b:'#dcfce7'} : l.estado==='SIN USO' ? {c:'#b91c1c',b:'#fee2e2'} : {c:'#b45309',b:'#fef3c7'};
+        return { bg: i%2?'#fbfcfe':'#ffffff', tipo:l.tipo, tipoBg:cs.b, tipoColor:cs.c,
+          rango:l.folio_del+' – '+l.al_folio, cantidad:this.fmt(l.cantidad),
+          tramo: mx==null ? 'sin uso' : l.folio_del+' → '+(String(l.folio_del).replace(/[0-9]/g,''))+mx,
+          usados:this.fmt(l.usados), saltados:this.fmt(l.saltados), disponibles:this.fmt(l.disponibles),
+          cuenta: mx==null ? l.cantidad+' intactos' : (mx-ini+1)+' recorridos · '+l.usados+' + '+l.saltados,
+          estado:l.estado, estadoBg:est.b, estadoColor:est.c };
+      });
+      dgTot = { cantidad:this.fmt(tot.cantidad), usados:this.fmt(tot.usados), saltados:this.fmt(tot.saltados), disponibles:this.fmt(tot.disponibles) };
+      const patron = [1,1,0,1,1,1,0,0,1,1,1,1,2,2,2,2];
+      dgEjemplo = patron.map((p,i)=>({ n:i+1,
+        color: p===1?'#16a34a':p===0?'#d97706':'#e2e8f0',
+        txtColor: p===2?'#94a3b8':'#fff',
+        tip: p===1?'folio '+(i+1)+': aparece en los reportes':p===0?'folio '+(i+1)+': hueco antes del último usado':'folio '+(i+1)+': nunca se llegó a él' }));
+      dgNota = 'Tramo recorrido = del primer folio del lote al más alto que aparece en los reportes. Usados + saltados dentro de ese tramo, y el resto del lote queda como disponible. Los '+this.fmt(tot.saltados)+' saltados valen '+dinero(D.compras?D.compras.desperdicio:0)+' al costo por folio de cada lote.';
+    }
+
+    const exportar = () => {
+      if(S==='compras'){ this.csv('compras-folios.csv',
+        ['Cantidad','Tipo','Peticion','Pago SICT','Fecha pago SICT','Pago imprenta','Fecha pago imprenta','Recibidos','Factura','Folio del','Al folio','Costo total','Costo por folio'],
+        lotesOrden.map(l=>[l.cantidad,l.tipo,l.fecha_peticion,l.pago_sict,l.fecha_pago_sict,l.pago_imprenta,l.fecha_pago_imprenta,l.fecha_recibidos,l.factura,l.folio_del,l.al_folio,l.costo_total,l.costo_folio])); return; }
+      if(S==='bd'){ this.csv('bd-verificaciones.csv', BD_COLS.map(c=>(c[0]+' '+c[1]).trim()),
+        bdBase.map((c,i)=>BD_COLS.map(col=>col[2]({c, item:i+1, factura:facturaPorLote[c.lote]||''})))); return; }
+      if(S==='produccion'){ this.csv('produccion-tecnicos.csv', ['Tecnico','Verificaciones FM'], tecList.map(t=>[t.n||'sin capturar',t.c])); return; }
+      if(S==='clientes') this.csv('clientes-riesgo.csv', ['Empresa','P1','P2','Delta','Estado','Caida %'], clientesFil.map(c=>[c.empresa,c.p1,c.p2,c.delta,c.estado,Math.round(c.caida)]));
+      else if(S==='traza') this.csv('trazabilidad.csv', ['Folio','Serie','Placa','Empresa','Fecha','Lote','Tecnico','Resultado'], hits.map(c=>[c.folio,c.serie,c.placas,c.empresa,c.fecha,c.lote,c.tecnico,c.resultado]));
+      else if(S==='cobertura') this.csv('cobertura-lotes.csv', ['Tipo','Rango','Cantidad','Usados','Saltados','Disponibles','% uso','Estado'], cobertura.map(l=>[l.tipo,l.rango,l._n,l.usados,l.saltados,l.disponibles,l.pct,l.estado]));
+      else if(S==='pronostico') this.csv('pronostico.csv', ['Serie','Comprados activos','Usados','Quedan','Quedan real','Tasa diaria','Agotamiento','Compra sugerida'], ((D.pronostico&&D.pronostico.series)||[]).map(s=>[s.serie,s.comprados_activos,s.usados,s.quedan,s.quedan_real,s.tasa_diaria,s.fecha_agotamiento,s.compra_sugerida]));
+      else this.csv('alertas.csv', ['Prioridad','Cifra','Unidad','Titulo','Detalle','Accion'], alertas.map(a=>[a.sev,a.cifra,a.unidad,a.titulo,a.detalle,a.accion]));
+    };
+
+    return { ...base,
+      meta:'Fuente '+this.state.fuente+' · generado '+(D.generado||'—')+' · EC '+this.fmt(D.produccion&&D.produccion.ec_total)+' · FM '+this.fmt(D.produccion&&D.produccion.fm_total),
+      alertas, kpis, semaforo, diasUmbral,
+      semTotal:this.fmt(semTotal), semComprados:this.fmt(R.folios_comprados), semSaltados:this.fmt(R.saltados),
+      ciclos:((D.control&&D.control.ciclos)||[]).map(String), ciclo:this.state.ciclo,
+      setCiclo:e=>this.setState({ciclo:e.target.value}),
+      periodos:[per(d.p1,'Período 1','ene – jun'), per(d.p2,'Período 2','jul – dic')],
+      validosTxt:((D.control&&D.control.lotes_validos)||[]).map(l=>l.tipo+' '+l.folio_del+'–'+l.al_folio+' ('+this.fmt(l.cantidad)+')').join(' · ') || 'ninguno registrado',
+      cobertura, filtrosLote,
+      q:this.state.q, setQ:e=>this.setState({q:e.target.value, selId:null}), limpiarQ:()=>this.setState({q:'', selId:null}),
+      resultados, sel, selFolio: sel?sel.folio:'', detalle, historial,
+      conteoTraza:this.fmt(hits.length)+' registros'+(hits.length>limite?' · mostrando '+limite:'')+(q?'':' · últimas verificaciones'),
+      trazaCols: sel ? 'minmax(0,1.6fr) minmax(280px,1fr)' : '1fr',
+      clientes:clientesFil, cliKpis, cartera, filtrosCli,
+      tecnicos, notaTecnicos, empresas, dias, diaInicio, diaFin, resultadosFm, prodKpis, cliQ:this.state.cliQ, setCliQ:e=>this.setState({cliQ:e.target.value}),
+      conteoCli:this.fmt(clientesFil.length)+' de '+this.fmt(cl.length)+' empresas',
+      series, meses, ultima:(D.pronostico&&D.pronostico.ultima)||'—',
+      bdCols:bdColsFinal, bdFilas, bdFiltros, bdQ:this.state.bdQ,
+      setBdQ:e=>this.setState({bdQ:e.target.value, bdPag:0}),
+      toggleVacias:()=>this.setState({bdVacias:!this.state.bdVacias}),
+      bdAnt:()=>this.setState({bdPag:Math.max(0, bdPag-1)}),
+      bdSig:()=>this.setState({bdPag:Math.min(bdPaginas-1, bdPag+1)}),
+      bdPagTxt:'Página '+(bdPag+1)+' de '+this.fmt(bdPaginas),
+      bdAntOn: bdPag>0 ? 1 : 0.35, bdSigOn: bdPag<bdPaginas-1 ? 1 : 0.35,
+      bdColBtn: this.state.bdVacias ? 'Solo columnas con datos' : 'Ver todas las columnas',
+      bdNota: 'Emisiones aporta hora, LMP y promedio de opacidad; físico-mecánica aporta tipo de vehículo, ejes, capacidad, RFC, tarjeta de circulación, servicio y odómetro. Filtra por tipo para ver cada bloque completo.',
+      bdConteo:'Registros '+this.fmt(bdBase.length?bdDesde+1:0)+'–'+this.fmt(Math.min(bdDesde+bdTope, bdBase.length))+' de '+this.fmt(bdBase.length)+' · el CSV exporta los '+this.fmt(bdBase.length)+' completos',
+      exportarBd:exportar, exportarCompras:exportar,
+      comprasKpis, comprasCols, comprasFilas, comprasTot, comprasNota,
+      dataInfo:[
+        {v:this.fmt((D.lotes||[]).length), l:'Lotes'},
+        {v:this.fmt((D.consumo||[]).length), l:'Verificaciones'},
+        {v:this.fmt((D.saltados||[]).length), l:'Folios saltados'},
+        {v:D.generado||'—', l:'Generado'}
+      ],
+      exportar,
+      dgFormula, dgSeries, dgFilas, dgTot, dgEjemplo, dgNota, dgConsumo, vidaLotes, vidaMeses, vidaKpis,
+      dgCols:[{l:'Serie',a:'left'},{l:'Rango del lote',a:'left'},{l:'Cantidad',a:'right'},{l:'Tramo recorrido',a:'left'},
+        {l:'Usados',a:'right'},{l:'Saltados',a:'right'},{l:'Disponibles',a:'right'},{l:'Cuenta',a:'left'},{l:'Estado',a:'left'}],
+      exportarLotes:()=>this.csv('lotes.csv', ['Tipo','Del','Al','Cantidad','Usados','Saltados','Disponibles','% uso','Estado','Factura','Recibidos','Ciclo','Periodo'], (D.lotes||[]).map(l=>[l.tipo,l.folio_del,l.al_folio,l.cantidad,l.usados,l.saltados,l.disponibles,l.pct_uso,l.estado,l.factura,l.fecha_recibidos,l.ciclo,l.periodo])),
+      exportarConsumo:()=>this.csv('consumo.csv', ['Folio','Serie','Verificacion','Placa','Empresa','Fecha','Lote','Tecnico','Resultado','En rango','Ciclo','Periodo'], (D.consumo||[]).map(c=>[c.folio,c.serie,c.tipo_verif,c.placas,c.empresa,c.fecha,c.lote,c.tecnico,c.resultado,c.en_rango?'si':'no',c.ciclo,c.periodo]))
+    };
+  }
+}
+</script>
+</body>
+</html>
