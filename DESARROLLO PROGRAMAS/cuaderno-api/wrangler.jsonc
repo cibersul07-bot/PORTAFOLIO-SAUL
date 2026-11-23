@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cuaderno-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cuaderno-db",
+      "database_id": "b508ec00-6198-4cd8-a2a1-95fe9a55b6f3",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "ai": { "binding": "AI" },
+  "assets": { "directory": "public" }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "cuaderno-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 migrations apply cuaderno-db --local",
+    "db:remote": "wrangler d1 migrations apply cuaderno-db --remote"
+  },
+  "dependencies": {
+    "hono": "^4.13.20"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261122.2",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.166.0"
+  }
+}
