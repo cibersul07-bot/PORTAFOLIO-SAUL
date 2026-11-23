@@ -3,7 +3,8 @@ const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-const today = () => new Date().toISOString().slice(0, 10);
+const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const today = () => isoLocal(new Date());
 const fmtDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" }) : "");
 const COLORS = ["#3b5bdb", "#2b8a3e", "#e67700", "#c2255c", "#7048e8", "#0c8599", "#5c940d", "#d9480f"];
 const STATUS = { present: "Presente", absent: "Falta", late: "Retraso", excused: "Justificada" };
@@ -314,16 +315,79 @@ async function renderGroup(gid, tab) {
   }
 }
 
+// ── Visual: avatares, colores y caritas
+const KIND_INFO = {
+  numeric: { icon: "🔢", label: "Nota", hint: "Número (0–máx.)" },
+  emoji: { icon: "😁", label: "Caritas", hint: "Feliz · Sonriente · Seria · Triste" },
+  check: { icon: "✅", label: "Hecho / No", hint: "Entregó o no entregó" },
+};
+const FACES = [
+  { e: "😁", label: "Feliz", pct: 1 },
+  { e: "🙂", label: "Sonriente", pct: 0.8 },
+  { e: "😐", label: "Seria", pct: 0.6 },
+  { e: "😟", label: "Triste", pct: 0.3 },
+];
+const faceFor = (pct) => (pct == null ? null : FACES.reduce((b, f) => (Math.abs(f.pct - pct) < Math.abs(b.pct - pct) ? f : b)));
+const moodFor = (pct) => (pct == null ? "" : pct >= 0.9 ? "😁" : pct >= 0.75 ? "🙂" : pct >= 0.6 ? "😐" : "😟");
+const level = (pct) => (pct == null ? "none" : pct < 0.6 ? "bad" : pct < 0.8 ? "mid" : "good");
+const AV_COLORS = ["#4c6ef5", "#7950f2", "#e64980", "#f76707", "#2f9e44", "#1098ad", "#d6336c", "#5c7cfa", "#ae3ec9", "#0ca678"];
+function avatar(s, size = 32) {
+  const name = `${s.first_name} ${s.last_name}`;
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const ini = (s.first_name[0] || "") + (s.last_name[0] || "");
+  return `<span class="avatar" style="--av:${AV_COLORS[h % AV_COLORS.length]};width:${size}px;height:${size}px;font-size:${size * 0.38}px">${esc(ini.toUpperCase())}</span>`;
+}
+const shortName = (s) => `${esc(s.first_name.split(" ")[0])} ${esc(s.last_name.split(" ")[0])}`;
+
+// Contenido de una celda del cuaderno según el tipo de actividad
+function cellHtml(a, sid, score) {
+  const pct = score == null ? null : score / a.max_score;
+  const lv = level(pct);
+  if (a.kind === "emoji") {
+    const f = faceFor(pct);
+    return `<button class="cell-face lv-${lv}" data-face="${a.id}" data-s="${sid}" title="${f ? f.label : "Sin evaluar"}">${f ? f.e : "＋"}</button>`;
+  }
+  if (a.kind === "check") {
+    const v = score == null ? "" : pct >= 0.5 ? "✓" : "✗";
+    return `<button class="cell-check lv-${score == null ? "none" : pct >= 0.5 ? "good" : "bad"}" data-check="${a.id}" data-s="${sid}">${v || "·"}</button>`;
+  }
+  return `<div class="cell-num lv-${lv}"><input type="number" step="any" min="0" max="${a.max_score}" value="${score ?? ""}"
+      data-a="${a.id}" data-s="${sid}" aria-label="Nota">${a.rubric_id ? `<button class="ghost mini" title="Evaluar con rúbrica" data-rub="${a.id}" data-s="${sid}">📐</button>` : ""}</div>`;
+}
+
+function statsHtml(gb, scale) {
+  const avgs = gb.rows.map((r) => r.average).filter((v) => v != null);
+  const mean = avgs.length ? avgs.reduce((a, b) => a + b, 0) / avgs.length : null;
+  const good = avgs.filter((v) => v / scale >= 0.8).length;
+  const mid = avgs.filter((v) => v / scale >= 0.6 && v / scale < 0.8).length;
+  const bad = avgs.filter((v) => v / scale < 0.6).length;
+  const pend = gb.rows.length - avgs.length;
+  const seg = (n, c) => (n ? `<span class="seg seg-${c}" style="flex:${n}" title="${n}"></span>` : "");
+  return `<div class="stats">
+    <div class="stat"><div class="stat-icon">${moodFor(mean == null ? null : mean / scale) || "📊"}</div>
+      <div><small>Media del grupo</small><b class="lv-text-${level(mean == null ? null : mean / scale)}">${mean == null ? "—" : mean.toFixed(1)}</b></div></div>
+    <div class="stat"><div class="stat-icon good">😁</div><div><small>Van muy bien</small><b>${good}</b></div></div>
+    <div class="stat"><div class="stat-icon mid">😐</div><div><small>Pueden mejorar</small><b>${mid}</b></div></div>
+    <div class="stat"><div class="stat-icon bad">😟</div><div><small>En riesgo</small><b>${bad}</b></div></div>
+    <div class="stat wide"><div style="flex:1"><small>Distribución · ${gb.assessments.length} actividades${pend ? ` · ${pend} sin notas` : ""}</small>
+      <div class="distbar">${seg(good, "good")}${seg(mid, "mid")}${seg(bad, "bad")}${seg(pend, "none")}</div></div></div>
+  </div>`;
+}
+
 // ── Cuaderno de notas
 async function tabGradebook(g, el, term = "") {
-  const [gb, rubrics] = await Promise.all([
-    api(`/groups/${g.id}/gradebook${term ? `?term=${encodeURIComponent(term)}` : ""}`),
+  const q = term ? `?term=${encodeURIComponent(term)}` : "";
+  const [gb, rubrics, all, att] = await Promise.all([
+    api(`/groups/${g.id}/gradebook${q}`),
     api("/rubrics"),
+    api(`/groups/${g.id}/assessments`),
+    api(`/groups/${g.id}/attendance/summary`),
   ]);
-  const terms = [...new Set((await api(`/groups/${g.id}/assessments`)).map((a) => a.term).filter(Boolean))];
+  const terms = [...new Set(all.map((a) => a.term).filter(Boolean))];
   const catName = Object.fromEntries(gb.categories.map((c) => [c.id, c.name]));
+  const attBy = Object.fromEntries(att.map((r) => [r.student_id, r]));
   const scale = g.grading_scale;
-  const cls = (v) => (v == null ? "" : v < scale * 0.5 ? "low" : v < scale * 0.7 ? "mid" : "high");
 
   el.innerHTML = `
     <div class="row" style="margin-bottom:12px">
@@ -331,7 +395,7 @@ async function tabGradebook(g, el, term = "") {
         .map((t) => `<option ${t === term ? "selected" : ""}>${esc(t)}</option>`)
         .join("")}</select>
       <span class="spacer"></span>
-      <button id="cats">Categorías (${gb.categories.length})</button>
+      <button id="cats">🏷️ Categorías (${gb.categories.length})</button>
       <button id="csv">⬇ CSV</button>
       <button class="primary" id="add-a">＋ Actividad</button>
     </div>
@@ -339,36 +403,36 @@ async function tabGradebook(g, el, term = "") {
       !gb.rows.length
         ? `<div class="card empty">Añade alumnos en la pestaña <a href="#/g/${g.id}/alumnos">Alumnos</a>.</div>`
         : !gb.assessments.length
-          ? `<div class="card empty">Crea la primera actividad evaluable con <b>＋ Actividad</b>.</div>`
-          : `<div class="table-wrap"><table class="grid"><thead><tr>
+          ? `<div class="card empty"><div style="font-size:40px">📝</div>Crea la primera actividad con <b>＋ Actividad</b>.<br>
+             Puedes evaluar con nota, con <b>caritas</b> 😁🙂😐😟 o con ✓/✗.</div>`
+          : `<div id="stats">${statsHtml(gb, scale)}</div>
+      <div class="table-wrap"><table class="grid gb"><thead><tr>
         <th class="sticky-col">Alumno</th>
+        <th class="num" title="Asistencia">📅</th>
         ${gb.assessments
           .map(
             (a) => `<th class="num"><div class="col-head">
+              <span class="kind-badge">${KIND_INFO[a.kind || "numeric"].icon}</span>
               <a href="#" data-edit-a="${a.id}" title="Editar">${esc(a.name)}</a>
-              <small class="muted">/${a.max_score}${a.weight != 1 ? ` ×${a.weight}` : ""}${a.date ? " · " + fmtDate(a.date) : ""}</small>
+              <small class="muted">${a.kind === "numeric" || !a.kind ? `/${a.max_score}` : ""}${a.weight != 1 ? ` ×${a.weight}` : ""}${a.date ? " · " + fmtDate(a.date) : ""}</small>
               ${a.category_id ? `<span class="chip">${esc(catName[a.category_id])}</span>` : ""}
               ${a.rubric_id ? `<span class="chip">📐 rúbrica</span>` : ""}</div></th>`,
           )
           .join("")}
         <th class="num">Media</th></tr></thead><tbody>
         ${gb.rows
-          .map(
-            (r) => `<tr><td class="sticky-col">${esc(r.student.last_name)}, ${esc(r.student.first_name)}</td>
-            ${gb.assessments
-              .map(
-                (a) => `<td class="num"><div class="row" style="justify-content:center;flex-wrap:nowrap;gap:4px">
-                <input type="number" step="any" min="0" max="${a.max_score}" value="${r.scores[a.id] ?? ""}"
-                  data-a="${a.id}" data-s="${r.student.id}" aria-label="Nota">
-                ${a.rubric_id ? `<button class="ghost" title="Evaluar con rúbrica" data-rub="${a.id}" data-s="${r.student.id}">📐</button>` : ""}
-                </div></td>`,
-              )
-              .join("")}
-            <td class="num avg ${cls(r.average)}" data-avg="${r.student.id}">${r.average ?? "—"}</td></tr>`,
-          )
+          .map((r) => {
+            const t = attBy[r.student.id];
+            const ap = t?.total ? (t.present + t.late) / t.total : null;
+            return `<tr><td class="sticky-col"><div class="who">${avatar(r.student)}<span>${esc(r.student.last_name)}, ${esc(r.student.first_name)}</span></div></td>
+            <td class="num"><span class="att-dot lv-${level(ap)}" title="${ap == null ? "Sin registros" : Math.round(ap * 100) + "% asistencia"}">${ap == null ? "·" : Math.round(ap * 100) + "%"}</span></td>
+            ${gb.assessments.map((a) => `<td class="num">${cellHtml(a, r.student.id, r.scores[a.id])}</td>`).join("")}
+            <td class="num" data-avg="${r.student.id}">${avgHtml(r.average, scale)}</td></tr>`;
+          })
           .join("")}
       </tbody></table></div>
-      <p class="muted">Las notas se guardan automáticamente al salir de la casilla. Media ponderada en escala 0–${scale}.</p>`
+      <div class="legend"><span><i class="sw good"></i>≥ 80 %</span><span><i class="sw mid"></i>60–79 %</span><span><i class="sw bad"></i>&lt; 60 %</span>
+        <span>😁 Feliz · 🙂 Sonriente · 😐 Seria · 😟 Triste</span><span class="muted">Se guarda automáticamente · escala 0–${scale}</span></div>`
     }`;
 
   const reload = () => tabGradebook(g, el, term);
@@ -376,9 +440,7 @@ async function tabGradebook(g, el, term = "") {
   $("#add-a").onclick = () => assessmentDialog(g, gb.categories, rubrics, null, reload);
   $("#cats").onclick = () => categoriesDialog(g, gb.categories, reload);
   $("#csv").onclick = async () => {
-    const res = await fetch(`/groups/${g.id}/gradebook.csv${term ? `?term=${encodeURIComponent(term)}` : ""}`, {
-      headers: { Authorization: `Bearer ${state.token}` },
-    });
+    const res = await fetch(`/groups/${g.id}/gradebook.csv${q}`, { headers: { Authorization: `Bearer ${state.token}` } });
     const url = URL.createObjectURL(await res.blob());
     Object.assign(document.createElement("a"), { href: url, download: `cuaderno-${g.name}.csv` }).click();
     URL.revokeObjectURL(url);
@@ -390,40 +452,107 @@ async function tabGradebook(g, el, term = "") {
         assessmentDialog(g, gb.categories, rubrics, gb.assessments.find((x) => x.id === a.dataset.editA), reload);
       }),
   );
-  $$("input[data-a]", el).forEach((inp) => {
-    inp.dataset.orig = inp.value;
-    inp.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        // baja a la siguiente fila
-        const cells = $$(`input[data-a="${inp.dataset.a}"]`, el);
-        cells[cells.indexOf(inp) + 1]?.focus();
-      }
-    });
-    inp.addEventListener("change", async () => {
-      const score = inp.value === "" ? null : Number(inp.value);
-      try {
-        await api(`/assessments/${inp.dataset.a}/grades`, { method: "PUT", body: [{ student_id: inp.dataset.s, score }] });
-        inp.classList.remove("error");
-        inp.classList.add("saved");
-        refreshAverages(g, el, term, cls);
-      } catch (e) {
-        inp.classList.add("error");
-        fail(e);
-      }
-    });
-  });
-  $$("[data-rub]", el).forEach((b) => (b.onclick = () => rubricScoreDialog(gb.assessments.find((a) => a.id === b.dataset.rub), b.dataset.s, rubrics, reload)));
-}
+  const byId = Object.fromEntries(gb.assessments.map((a) => [a.id, a]));
 
-async function refreshAverages(g, el, term, cls) {
-  const gb = await api(`/groups/${g.id}/gradebook${term ? `?term=${encodeURIComponent(term)}` : ""}`);
-  for (const r of gb.rows) {
-    const td = $(`[data-avg="${r.student.id}"]`, el);
-    if (td) {
-      td.textContent = r.average ?? "—";
-      td.className = `num avg ${cls(r.average)}`;
+  /** Guarda una nota y repinta la celda + medias */
+  async function save(aid, sid, score, td) {
+    try {
+      await api(`/assessments/${aid}/grades`, { method: "PUT", body: [{ student_id: sid, score }] });
+      if (td) {
+        td.innerHTML = cellHtml(byId[aid], sid, score);
+        bindCell(td);
+        td.firstElementChild.classList.add("pop");
+      }
+      refreshSummary(g, el, q);
+    } catch (e) {
+      fail(e);
     }
   }
+
+  function bindCell(scope) {
+    $$("input[data-a]", scope).forEach((inp) => {
+      inp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          const cells = $$(`input[data-a="${inp.dataset.a}"]`, el);
+          cells[cells.indexOf(inp) + 1]?.focus();
+        }
+      });
+      inp.addEventListener("change", async () => {
+        const score = inp.value === "" ? null : Number(inp.value);
+        const a = byId[inp.dataset.a];
+        if (score != null && (score < 0 || score > a.max_score)) {
+          inp.parentElement.className = "cell-num lv-error";
+          return toast(`La nota debe estar entre 0 y ${a.max_score}`, true);
+        }
+        try {
+          await api(`/assessments/${a.id}/grades`, { method: "PUT", body: [{ student_id: inp.dataset.s, score }] });
+          inp.parentElement.className = `cell-num lv-${level(score == null ? null : score / a.max_score)} pop`;
+          refreshSummary(g, el, q);
+        } catch (e) {
+          inp.parentElement.className = "cell-num lv-error";
+          fail(e);
+        }
+      });
+    });
+    $$("[data-check]", scope).forEach(
+      (b) =>
+        (b.onclick = () => {
+          const a = byId[b.dataset.check];
+          const cur = b.textContent.trim();
+          const next = cur === "·" ? a.max_score : cur === "✓" ? 0 : null; // vacío → ✓ → ✗ → vacío
+          save(a.id, b.dataset.s, next, b.parentElement);
+        }),
+    );
+    $$("[data-face]", scope).forEach((b) => (b.onclick = (e) => facePicker(e.currentTarget, byId[b.dataset.face], save)));
+    $$("[data-rub]", scope).forEach(
+      (b) => (b.onclick = () => rubricScoreDialog(byId[b.dataset.rub], b.dataset.s, rubrics, reload)),
+    );
+  }
+  bindCell(el);
+}
+
+function avgHtml(v, scale) {
+  if (v == null) return `<span class="avg-pill lv-none">—</span>`;
+  const p = v / scale;
+  return `<span class="avg-pill lv-${level(p)}">${moodFor(p)} ${v}</span>`;
+}
+
+/** Menú flotante para elegir carita */
+function facePicker(btn, a, save) {
+  $(".face-pop")?.remove();
+  const pop = document.createElement("div");
+  pop.className = "face-pop";
+  pop.innerHTML =
+    FACES.map((f) => `<button data-pct="${f.pct}" title="${f.label}"><span>${f.e}</span><small>${f.label}</small></button>`).join("") +
+    `<button data-pct="" title="Quitar"><span>⌫</span><small>Quitar</small></button>`;
+  document.body.append(pop);
+  const r = btn.getBoundingClientRect();
+  const w = pop.offsetWidth;
+  pop.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2))}px`;
+  pop.style.top = `${r.bottom + window.scrollY + 6}px`;
+  pop.onclick = (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    const score = b.dataset.pct === "" ? null : Math.round(Number(b.dataset.pct) * a.max_score * 100) / 100;
+    pop.remove();
+    save(a.id, btn.dataset.s, score, btn.parentElement);
+  };
+  setTimeout(() => document.addEventListener("click", function off(e) {
+    if (!pop.contains(e.target)) {
+      pop.remove();
+      document.removeEventListener("click", off);
+    }
+  }), 0);
+}
+
+async function refreshSummary(g, el, q) {
+  const gb = await api(`/groups/${g.id}/gradebook${q}`);
+  for (const r of gb.rows) {
+    const td = $(`[data-avg="${r.student.id}"]`, el);
+    if (td) td.innerHTML = avgHtml(r.average, g.grading_scale);
+  }
+  const st = $("#stats", el);
+  if (st) st.innerHTML = statsHtml(gb, g.grading_scale);
 }
 
 async function assessmentDialog(g, cats, rubrics, a, done) {
@@ -431,6 +560,13 @@ async function assessmentDialog(g, cats, rubrics, a, done) {
     a ? "Editar actividad" : "Nueva actividad evaluable",
     `<div class="form-grid">
       <label style="grid-column:1/-1">Nombre<input name="name" required value="${esc(a?.name)}" placeholder="Examen tema 1"></label>
+      <div style="grid-column:1/-1"><label>Tipo de evaluación</label>
+        <div class="kind-picker">${Object.entries(KIND_INFO)
+          .map(
+            ([k, i]) => `<label class="kind-opt"><input type="radio" name="kind" value="${k}" ${(a?.kind || "numeric") === k ? "checked" : ""}>
+              <span class="kind-card"><b>${i.icon}</b><span>${i.label}</span><small>${i.hint}</small></span></label>`,
+          )
+          .join("")}</div></div>
       <label>Fecha<input name="date" type="date" value="${esc(a?.date || today())}"></label>
       <label>Evaluación / trimestre<input name="term" value="${esc(a?.term || "")}" placeholder="1ª Evaluación"></label>
       <label>Nota máxima<input name="max_score" type="number" min="0.1" step="any" value="${esc(a?.max_score ?? 10)}"></label>
@@ -443,7 +579,7 @@ async function assessmentDialog(g, cats, rubrics, a, done) {
     ${a ? `<button type="button" class="danger" data-del-a="${a.id}">Eliminar actividad y sus notas</button>` : ""}`,
   );
   if (!v) return;
-  const body = { ...v, max_score: Number(v.max_score), weight: Number(v.weight), category_id: v.category_id || null, rubric_id: v.rubric_id || null, date: v.date || null, term: v.term || null };
+  const body = { ...v, kind: v.kind || "numeric", max_score: Number(v.max_score), weight: Number(v.weight), category_id: v.category_id || null, rubric_id: v.rubric_id || null, date: v.date || null, term: v.term || null };
   try {
     await api(a ? `/assessments/${a.id}` : `/groups/${g.id}/assessments`, { method: a ? "PATCH" : "POST", body });
     toast("Actividad guardada");
@@ -646,7 +782,7 @@ async function studentSheet(g, s) {
     const text = $("[name=text]", dlg).value.trim();
     if (!text) return;
     try {
-      const o = await api(`/students/${s.id}/observations`, { method: "POST", body: { text, kind: $("[name=kind]", dlg).value } });
+      const o = await api(`/students/${s.id}/observations`, { method: "POST", body: { text, kind: $("[name=kind]", dlg).value, date: today() } });
       const list = $("#obs", dlg);
       if (!list.querySelector(".list-item")) list.innerHTML = "";
       list.insertAdjacentHTML("afterbegin", obsItem(o));
@@ -680,58 +816,120 @@ const obsItem = (o) =>
   `<div class="list-item obs-${esc(o.kind)}"><div><small class="muted">${fmtDate(o.date)}</small><div>${esc(o.text)}</div></div>
    <span class="spacer"></span><button type="button" class="ghost" data-delobs="${o.id}">✕</button></div>`;
 
-// ── Asistencia
+// ── Asistencia (visual)
+const ATT = {
+  present: { icon: "✅", label: "Presente", cls: "good" },
+  absent: { icon: "❌", label: "Falta", cls: "bad" },
+  late: { icon: "⏰", label: "Retraso", cls: "mid" },
+  excused: { icon: "📄", label: "Justificada", cls: "info" },
+};
+const shiftDate = (d, n) => {
+  const x = new Date(d + "T00:00:00");
+  x.setDate(x.getDate() + n);
+  return isoLocal(x);
+};
+
 async function tabAttendance(g, el, date = today()) {
-  const [students, recs, summary] = await Promise.all([
-    api(`/groups/${g.id}/students`),
-    api(`/groups/${g.id}/attendance?from=${date}&to=${date}`),
-    api(`/groups/${g.id}/attendance/summary`),
-  ]);
-  const cur = Object.fromEntries(recs.map((r) => [r.student_id, r.status]));
-  const sum = Object.fromEntries(summary.map((r) => [r.student_id, r]));
-  el.innerHTML = `
-    <div class="row" style="margin-bottom:12px">
-      <input type="date" id="date" value="${date}">
-      <button id="all">Todos presentes</button><span class="spacer"></span>
-      <button class="primary" id="save">Guardar asistencia</button></div>
+  const [students, recs] = await Promise.all([api(`/groups/${g.id}/students`), api(`/groups/${g.id}/attendance`)]);
+  const cur = {};
+  const hist = {}; // student -> {date: status}
+  for (const r of recs) {
+    (hist[r.student_id] ||= {})[r.date] = r.status;
+    if (r.date === date) cur[r.student_id] = r.status;
+  }
+  const dates = [...new Set(recs.map((r) => r.date))].sort();
+  const lastDates = dates.slice(-12);
+
+  const render = () => {
+    const counts = Object.fromEntries(Object.keys(ATT).map((k) => [k, 0]));
+    Object.values(cur).forEach((s) => counts[s]++);
+    const marked = Object.keys(cur).length;
+    const pctToday = marked ? Math.round(((counts.present + counts.late) / marked) * 100) : null;
+    const isToday = date === today();
+    el.innerHTML = `
+    <div class="att-top">
+      <div class="date-nav">
+        <button id="prev" title="Día anterior">◀</button>
+        <input type="date" id="date" value="${date}">
+        <button id="next" title="Día siguiente">▶</button>
+        ${isToday ? `<span class="chip">Hoy</span>` : `<button id="today">Hoy</button>`}
+      </div>
+      <span class="spacer"></span>
+      <button class="primary" id="all">✅ Marcar resto como presentes</button>
+    </div>
     ${
       !students.length
         ? `<div class="card empty">Añade alumnos primero.</div>`
-        : `<div class="table-wrap"><table><thead><tr><th>Alumno</th><th>Estado ${fmtDate(date)}</th>
-        <th class="num">Faltas</th><th class="num">Retrasos</th><th class="num">Justif.</th><th class="num">% asist.</th></tr></thead><tbody>
+        : `
+    <div class="stats">
+      <div class="stat"><div class="stat-icon">${pctToday == null ? "📅" : moodFor(pctToday / 100)}</div>
+        <div><small>Asistencia del día</small><b class="lv-text-${level(pctToday == null ? null : pctToday / 100)}">${pctToday == null ? "—" : pctToday + "%"}</b></div></div>
+      ${Object.entries(ATT)
+        .map(([k, v]) => `<div class="stat"><div class="stat-icon ${v.cls}">${v.icon}</div><div><small>${v.label}</small><b>${counts[k]}</b></div></div>`)
+        .join("")}
+      <div class="stat"><div class="stat-icon">👥</div><div><small>Sin marcar</small><b>${students.length - marked}</b></div></div>
+    </div>
+    <div class="att-grid">
       ${students
         .map((s) => {
-          const t = sum[s.id] || {};
-          const pct = t.total ? Math.round(((t.present + t.late) / t.total) * 100) + "%" : "—";
-          return `<tr data-s="${s.id}"><td>${esc(s.last_name)}, ${esc(s.first_name)}</td>
-          <td><div class="att">${Object.entries(STATUS)
-            .map(([k, v]) => `<button type="button" data-s="${k}" class="${cur[s.id] === k ? "on" : ""}">${v}</button>`)
-            .join("")}</div></td>
-          <td class="num">${t.absent ?? 0}</td><td class="num">${t.late ?? 0}</td><td class="num">${t.excused ?? 0}</td><td class="num">${pct}</td></tr>`;
+          const st = cur[s.id];
+          const h = hist[s.id] || {};
+          const tot = Object.values(h).length;
+          const ok = Object.values(h).filter((x) => x === "present" || x === "late").length;
+          const p = tot ? ok / tot : null;
+          return `<div class="att-card ${st ? "st-" + ATT[st].cls : ""}" data-s="${s.id}">
+            <div class="who">${avatar(s, 40)}<div><b>${shortName(s)}</b>
+              <div class="muted small">${p == null ? "Sin historial" : `${moodFor(p)} ${Math.round(p * 100)}% asistencia · ${tot} días`}</div></div></div>
+            <div class="att-btns">${Object.entries(ATT)
+              .map(([k, v]) => `<button class="att-btn ${st === k ? "on " + v.cls : ""}" data-st="${k}" title="${v.label}"><span>${v.icon}</span><small>${v.label}</small></button>`)
+              .join("")}</div>
+            ${lastDates.length ? `<div class="att-strip" title="Últimos días">${lastDates
+              .map((d) => {
+                const x = d === date ? st : h[d];
+                return `<i class="${x ? ATT[x].cls : "none"} ${d === date ? "current" : ""}" title="${fmtDate(d)}: ${x ? ATT[x].label : "sin registro"}"></i>`;
+              })
+              .join("")}</div>` : ""}
+          </div>`;
         })
-        .join("")}</tbody></table></div>`
+        .join("")}
+    </div>
+    <div class="legend"><span>Clic en un estado para guardarlo al momento.</span>
+      ${Object.values(ATT).map((v) => `<span><i class="sw ${v.cls}"></i>${v.label}</span>`).join("")}<span><i class="sw none"></i>Sin registro</span></div>`
     }`;
-  $("#date").onchange = (e) => tabAttendance(g, el, e.target.value);
-  $$(".att button", el).forEach(
-    (b) =>
-      (b.onclick = () => {
-        $$("button", b.parentElement).forEach((x) => x.classList.remove("on"));
-        b.classList.add("on");
-      }),
-  );
-  $("#all").onclick = () => $$("tr[data-s]", el).forEach((tr) => {
-    if (!$(".on", tr)) $('button[data-s="present"]', tr).classList.add("on");
-  });
-  $("#save").onclick = (e) =>
-    busy(e.currentTarget, async () => {
-      const records = $$("tr[data-s]", el)
-        .map((tr) => ({ student_id: tr.dataset.s, status: $(".on", tr)?.dataset.s }))
-        .filter((r) => r.status);
-      if (!records.length) return toast("Marca al menos un alumno", true);
-      await api(`/groups/${g.id}/attendance`, { method: "PUT", body: { date: $("#date").value, records } });
-      toast(`Asistencia guardada (${records.length})`);
-      tabAttendance(g, el, $("#date").value);
-    });
+
+    const go = (d) => tabAttendance(g, el, d);
+    $("#date").onchange = (e) => go(e.target.value);
+    $("#prev").onclick = () => go(shiftDate(date, -1));
+    $("#next").onclick = () => go(shiftDate(date, 1));
+    $("#today") && ($("#today").onclick = () => go(today()));
+    $$(".att-btn", el).forEach(
+      (b) =>
+        (b.onclick = async () => {
+          const sid = b.closest(".att-card").dataset.s;
+          const status = b.dataset.st;
+          try {
+            await api(`/groups/${g.id}/attendance`, { method: "PUT", body: { date, records: [{ student_id: sid, status }] } });
+            cur[sid] = status;
+            (hist[sid] ||= {})[date] = status;
+            if (!lastDates.includes(date)) lastDates.push(date), lastDates.sort(), lastDates.splice(0, lastDates.length - 12);
+            render();
+          } catch (e) {
+            fail(e);
+          }
+        }),
+    );
+    $("#all").onclick = (e) =>
+      busy(e.currentTarget, async () => {
+        const records = students.filter((s) => !cur[s.id]).map((s) => ({ student_id: s.id, status: "present" }));
+        if (!records.length) return toast("Todos ya están marcados");
+        await api(`/groups/${g.id}/attendance`, { method: "PUT", body: { date, records } });
+        records.forEach((r) => ((cur[r.student_id] = "present"), ((hist[r.student_id] ||= {})[date] = "present")));
+        if (!lastDates.includes(date)) lastDates.push(date), lastDates.sort();
+        toast(`${records.length} marcados como presentes`);
+        render();
+      });
+  };
+  render();
 }
 
 // ── Sesiones
@@ -796,7 +994,7 @@ async function tabSessions(g, el) {
         d.setDate(d.getDate() + i * (Number(v.gap) || 1));
         await api(`/groups/${g.id}/sessions`, {
           method: "POST",
-          body: { date: d.toISOString().slice(0, 10), title: String(p.title), objectives: String(p.objectives ?? ""), content: String(p.content ?? "") },
+          body: { date: isoLocal(d), title: String(p.title), objectives: String(p.objectives ?? ""), content: String(p.content ?? "") },
         });
       }
       toast(`${plan.length} sesiones añadidas`);

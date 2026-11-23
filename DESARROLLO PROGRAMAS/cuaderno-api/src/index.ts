@@ -246,7 +246,8 @@ api.delete("/categories/:id", async (c) => {
 });
 
 // ───────────── Evaluaciones (columnas) y notas ─────────────
-const ASSESS_FIELDS = ["name", "date", "term", "max_score", "weight", "category_id", "rubric_id"];
+const ASSESS_FIELDS = ["name", "date", "term", "max_score", "weight", "category_id", "rubric_id", "kind"];
+const KINDS = ["numeric", "emoji", "check"];
 
 api.get("/groups/:id/assessments", async (c) => {
   await ownGroup(c, c.req.param("id"));
@@ -263,18 +264,21 @@ api.post("/groups/:id/assessments", async (c) => {
   await ownGroup(c, gid);
   const b = await body(c);
   need(b, "name");
+  if (b.kind !== undefined && !KINDS.includes(b.kind)) bad(`kind debe ser uno de ${KINDS.join(", ")}`);
   if (b.rubric_id) await ownRubric(c, b.rubric_id);
   const aid = id();
   await c.env.DB.prepare(
-    "INSERT INTO assessments (id, group_id, category_id, rubric_id, name, date, term, max_score, weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO assessments (id, group_id, category_id, rubric_id, name, date, term, max_score, weight, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   )
-    .bind(aid, gid, b.category_id ?? null, b.rubric_id ?? null, b.name, b.date ?? null, b.term ?? null, b.max_score ?? 10, b.weight ?? 1)
+    .bind(aid, gid, b.category_id ?? null, b.rubric_id ?? null, b.name, b.date ?? null, b.term ?? null, b.max_score ?? 10, b.weight ?? 1, b.kind ?? "numeric")
     .run();
   return c.json(await ownAssessment(c, aid), 201);
 });
 api.patch("/assessments/:id", async (c) => {
   await ownAssessment(c, c.req.param("id"));
-  await patch(c, "assessments", c.req.param("id"), await body(c), ASSESS_FIELDS);
+  const pb = await body(c);
+  if (pb.kind !== undefined && !KINDS.includes(pb.kind)) bad(`kind debe ser uno de ${KINDS.join(", ")}`);
+  await patch(c, "assessments", c.req.param("id"), pb, ASSESS_FIELDS);
   return c.json(await ownAssessment(c, c.req.param("id")));
 });
 api.delete("/assessments/:id", async (c) => {
