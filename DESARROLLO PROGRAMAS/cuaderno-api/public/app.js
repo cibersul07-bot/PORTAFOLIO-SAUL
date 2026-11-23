@@ -102,7 +102,8 @@ function logout() {
 
 // ───────── Router ─────────
 async function route() {
-  const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  const [path, query = ""] = location.hash.replace(/^#\/?/, "").split("?");
+  const parts = path.split("/").filter(Boolean);
   // Páginas públicas para alumnos (no requieren sesión)
   if (parts[0] === "q" && parts[1]) return renderPublicQuiz(parts[1]);
   if (parts[0] === "e" && parts[1]) return renderPublicEval(parts[1]);
@@ -115,6 +116,7 @@ async function route() {
   }
   if (parts[0] === "g" && parts[1]) return renderGroup(parts[1], parts[2] || "cuaderno");
   if (parts[0] === "rubricas") return renderRubrics();
+  if (parts[0] === "integraciones") return renderIntegrations(new URLSearchParams(query));
   return renderHome();
 }
 window.addEventListener("hashchange", route);
@@ -127,6 +129,7 @@ function shell(active, content) {
       <nav>
         <a href="#/" class="${active === "home" ? "active" : ""}">🏠 Inicio</a>
         <a href="#/rubricas" class="${active === "rubricas" ? "active" : ""}">📐 Rúbricas</a>
+        <a href="#/integraciones" class="${active === "integraciones" ? "active" : ""}">🔌 Integraciones</a>
       </nav>
       <div class="section-label">Mis grupos</div>
       <nav>
@@ -330,6 +333,7 @@ async function renderGroup(gid, tab) {
       <h2>${esc(g.name)}</h2><span class="muted">${esc(g.subject || "")}</span><span class="spacer"></span>
       <button class="magic-btn" id="magic">🪄 Magic box</button>
       <button id="rand" title="Alumno aleatorio">🎲</button>
+      <button id="lms" title="Classroom, Teams, Moodle…">🔌 ${g.settings?.lms ? esc(LMS[g.settings.lms.provider]?.short || "LMS") : "LMS"}</button>
       <button id="export" title="Descargar copia de seguridad (JSON)">💾</button>
       <button id="edit-g">⚙️ Ajustes</button><button class="danger" id="del-g">Eliminar</button>
     </div>
@@ -351,6 +355,7 @@ async function renderGroup(gid, tab) {
   };
   $("#magic").onclick = () => magicBox(g);
   $("#rand").onclick = () => magicBox(g, "random");
+  $("#lms").onclick = () => lmsDialog(g);
   $("#export").onclick = async () => {
     const res = await fetch(`/groups/${gid}/export`, { headers: { Authorization: `Bearer ${state.token}` } });
     if (!res.ok) return toast("No se pudo exportar", true);
@@ -952,6 +957,7 @@ async function tabStudents(g, el) {
   const students = await api(`/groups/${g.id}/students`);
   el.innerHTML = `
     <div class="row" style="margin-bottom:12px"><span class="muted">${students.length} alumnos</span><span class="spacer"></span>
+      <button id="csv-s" title="CSV exportado de Classroom, Teams, Moodle, Excel…">📄 Importar CSV</button>
       <button id="bulk">📋 Importar lista</button><button class="primary" id="add-s">＋ Alumno</button></div>
     ${
       students.length
@@ -966,6 +972,7 @@ async function tabStudents(g, el) {
     }`;
   const reload = () => route();
   $("#add-s").onclick = () => studentDialog(g, null, reload);
+  $("#csv-s").onclick = () => csvImportDialog(g, students, reload);
   $("#bulk").onclick = async () => {
     const v = await modal(
       "Importar lista de alumnos",
@@ -2075,6 +2082,354 @@ async function renderPublicEval(token) {
     };
   };
   draw();
+}
+
+// ───────── Integraciones con LMS ─────────
+const LMS = {
+  google: { name: "Google Classroom", short: "Classroom", icon: "🟩", color: "#1e8e3e" },
+  microsoft: { name: "Microsoft Teams", short: "Teams", icon: "🟪", color: "#5b5fc7" },
+  moodle: { name: "Moodle", short: "Moodle", icon: "🟧", color: "#f98012" },
+};
+
+async function renderIntegrations(params) {
+  shell("integraciones", `<div class="header"><h2>🔌 Integraciones</h2></div><div id="int"><span class="spin"></span></div>`);
+  if (params.get("ok")) toast(`✅ ${LMS[params.get("ok")]?.name || "Cuenta"} conectado`);
+  if (params.get("error")) toast(`No se pudo conectar: ${params.get("error")}`, true);
+  if (params.toString()) history.replaceState(null, "", "#/integraciones");
+  let st, keys;
+  try {
+    [st, keys] = await Promise.all([api("/integrations"), api("/api-keys")]);
+  } catch (e) {
+    return fail(e);
+  }
+  const linked = state.groups.filter((g) => g.settings?.lms);
+  const card = (p, body) => `<div class="card lms-card" style="--lc:${LMS[p].color}">
+      <div class="row"><span class="lms-logo">${LMS[p].icon}</span><h3>${LMS[p].name}</h3><span class="spacer"></span>
+        ${st[p].connected ? `<span class="chip ok">● Conectado</span>` : `<span class="chip">○ Sin conectar</span>`}</div>${body}</div>`;
+  const oauthBody = (p) =>
+    st[p].connected
+      ? `<p class="muted">Cuenta: <b>${esc(st[p].account || "—")}</b></p>
+         <ul class="small muted"><li>Importa alumnos de tus clases</li><li>Envía notas como tarea calificada</li></ul>
+         <div class="row"><button data-reconnect="${p}">Reconectar</button><button class="danger ghost" data-disconnect="${p}">Desconectar</button></div>`
+      : st[p].configured
+        ? `<p class="muted">Importa tus clases y alumnos, y envía las notas del cuaderno.</p>
+           <button class="primary" data-connect="${p}">Conectar con ${LMS[p].short}</button>`
+        : `<p class="muted">Falta registrar la app en ${p === "google" ? "Google Cloud" : "Microsoft Entra (Azure)"} (una sola vez, la hace el administrador del servidor).</p>
+           <details><summary>Ver pasos de configuración</summary>${setupSteps(p, st.redirect_uris[p])}</details>`;
+  $("#int").innerHTML = `
+    <p class="muted">Conecta el cuaderno con tu plataforma educativa: importa la lista de alumnos de un curso y envía las calificaciones. Luego, en cada grupo, usa el botón <b>🔌 LMS</b>.</p>
+    <div class="grid-cards lms-grid">
+      ${card("google", oauthBody("google"))}
+      ${card("microsoft", oauthBody("microsoft"))}
+      ${card(
+        "moodle",
+        st.moodle.connected
+          ? `<p class="muted">Sitio: <b>${esc(st.moodle.account || "—")}</b></p>
+             <ul class="small muted"><li>Importa alumnos de tus cursos</li><li>Notas: descarga un CSV listo para importar en Moodle</li></ul>
+             <div class="row"><button data-moodle>Cambiar</button><button class="danger ghost" data-disconnect="moodle">Desconectar</button></div>`
+          : `<p class="muted">Usa la URL de tu Moodle y un <b>token de servicios web</b> (Moodle → Preferencias → Claves de seguridad).</p>
+             <button class="primary" data-moodle>Conectar Moodle</button>`,
+      )}
+      <div class="card lms-card" style="--lc:#495057">
+        <div class="row"><span class="lms-logo">🧩</span><h3>Otras plataformas</h3></div>
+        <ul class="small"><li><b>Importar alumnos</b>: en un grupo → 👥 Alumnos → <b>📄 Importar CSV</b> (exportado de cualquier plataforma).</li>
+          <li><b>Exportar notas</b>: botón 🔌 LMS del grupo → «CSV con email».</li>
+          <li><b>Automatizaciones</b> (Zapier, Make, scripts): usa una clave de API.</li></ul>
+        <div class="list">${
+          keys
+            .map(
+              (k) => `<div class="list-item"><code>${esc(k.prefix)}…</code><div style="flex:1"><b>${esc(k.name)}</b><div class="muted small">${
+                k.last_used ? "Último uso " + fmtDate(k.last_used.slice(0, 10)) : "Sin usar"
+              }</div></div><button class="ghost danger" data-delkey="${k.id}">✕</button></div>`,
+            )
+            .join("") || `<p class="muted small">Sin claves de API.</p>`
+        }</div>
+        <button id="newkey">🔑 Crear clave de API</button>
+      </div>
+    </div>
+    ${
+      linked.length
+        ? `<h3 style="margin-top:20px">Grupos vinculados</h3><div class="list">${linked
+            .map(
+              (g) => `<div class="list-item"><span>${LMS[g.settings.lms.provider]?.icon}</span><b>${esc(g.name)}</b><span class="muted">↔ ${esc(
+                g.settings.lms.course_name || g.settings.lms.course_id,
+              )} (${LMS[g.settings.lms.provider]?.short})</span><span class="spacer"></span><a href="#/g/${g.id}">Abrir</a></div>`,
+            )
+            .join("")}</div>`
+        : ""
+    }`;
+  const reload = () => renderIntegrations(new URLSearchParams());
+  $$("[data-connect], [data-reconnect]").forEach(
+    (b) =>
+      (b.onclick = (e) =>
+        busy(e.currentTarget, async () => {
+          const r = await api(`/integrations/${b.dataset.connect || b.dataset.reconnect}/start`);
+          location.href = r.url;
+        })),
+  );
+  $$("[data-disconnect]").forEach(
+    (b) =>
+      (b.onclick = async () => {
+        if (!confirm(`¿Desconectar ${LMS[b.dataset.disconnect].name}? Los grupos vinculados dejarán de sincronizar hasta que vuelvas a conectar.`)) return;
+        await api(`/integrations/${b.dataset.disconnect}`, { method: "DELETE" }).then(reload, fail);
+      }),
+  );
+  $$("[data-moodle]").forEach(
+    (b) =>
+      (b.onclick = async () => {
+        const v = await modal(
+          "Conectar Moodle",
+          `<label>URL de tu Moodle<input name="url" type="url" required placeholder="https://moodle.tuescuela.edu.mx"></label>
+           <label>Token de servicios web<input name="token" required autocomplete="off" placeholder="Pega aquí tu token"></label>
+           <details><summary class="muted">¿Dónde consigo el token?</summary><ol class="small">
+             <li>Entra a tu Moodle → menú de usuario → <b>Preferencias</b> → <b>Claves de seguridad</b>.</li>
+             <li>Copia la clave del servicio <b>Moodle mobile web service</b> (o el que te indique tu administrador).</li>
+             <li>Si no aparece, pide al administrador que habilite los servicios web y el protocolo REST.</li></ol></details>`,
+          { submit: "Conectar" },
+        );
+        if (!v) return;
+        try {
+          const r = await api("/integrations/moodle", { method: "POST", body: v });
+          toast(`✅ Moodle conectado: ${r.account}`);
+          reload();
+        } catch (e) {
+          fail(e);
+        }
+      }),
+  );
+  $("#newkey").onclick = async () => {
+    const v = await modal("Nueva clave de API", `<label>Nombre<input name="name" required placeholder="Zapier / script de notas"></label>`, { submit: "Crear" });
+    if (!v) return;
+    try {
+      const k = await api("/api-keys", { method: "POST", body: v });
+      const pk = modal(
+        "🔑 Copia tu clave ahora",
+        `<p>Por seguridad <b>solo se muestra esta vez</b>. Úsala como <code>Authorization: Bearer &lt;clave&gt;</code>.</p>
+         <div class="row"><input readonly value="${esc(k.key)}" style="flex:1;font-family:monospace" id="keyval"><button type="button" id="cpkey">Copiar</button></div>
+         <p class="muted small">Da acceso completo a tus grupos. No la compartas; si se filtra, bórrala.</p>`,
+        { submit: "" },
+      );
+      $("#cpkey").onclick = () => copyText($("#keyval").value, "Clave copiada");
+      await pk;
+      reload();
+    } catch (e) {
+      fail(e);
+    }
+  };
+  $$("[data-copyuri]").forEach((b) => (b.onclick = () => copyText(b.dataset.copyuri, "URI copiada")));
+  $$("[data-delkey]").forEach(
+    (b) => (b.onclick = async () => confirm("¿Borrar esta clave? Las automatizaciones que la usen dejarán de funcionar.") && api(`/api-keys/${b.dataset.delkey}`, { method: "DELETE" }).then(reload, fail)),
+  );
+}
+
+function setupSteps(p, uri) {
+  const copy = `<div class="row"><code class="uri">${esc(uri)}</code><button type="button" data-copyuri="${esc(uri)}">Copiar</button></div>`;
+  return p === "google"
+    ? `<ol class="small">
+        <li>En <b>console.cloud.google.com</b> crea un proyecto y activa la <b>Google Classroom API</b>.</li>
+        <li>Pantalla de consentimiento OAuth: tipo «Externo», añade tu correo como usuario de prueba.</li>
+        <li>Credenciales → Crear ID de cliente OAuth → «Aplicación web». URI de redireccionamiento autorizado:${copy}</li>
+        <li>Guarda el ID y el secreto en Cloudflare:<br><code>npx wrangler secret put GOOGLE_CLIENT_ID</code><br><code>npx wrangler secret put GOOGLE_CLIENT_SECRET</code></li></ol>`
+    : `<ol class="small">
+        <li>En <b>entra.microsoft.com</b> → Registros de aplicaciones → Nuevo registro (cuentas de cualquier organización).</li>
+        <li>URI de redirección (Web):${copy}</li>
+        <li>Permisos delegados de Microsoft Graph: <code>EduRoster.ReadBasic</code>, <code>EduAssignments.ReadWrite</code>, <code>User.Read</code>, <code>offline_access</code> (el administrador del centro debe dar consentimiento).</li>
+        <li>Certificados y secretos → nuevo secreto. Guárdalos en Cloudflare:<br><code>npx wrangler secret put MS_CLIENT_ID</code><br><code>npx wrangler secret put MS_CLIENT_SECRET</code></li></ol>`;
+}
+
+/** Diálogo del grupo: vincular curso, importar alumnos y enviar notas */
+async function lmsDialog(g) {
+  const st = await api("/integrations").catch(fail);
+  if (!st) return;
+  const lms = g.settings?.lms;
+  const connected = Object.keys(LMS).filter((p) => st[p].connected);
+  const assessments = lms ? await api(`/groups/${g.id}/assessments`) : [];
+  const p = modal(
+    `🔌 ${esc(g.name)} ↔ plataforma`,
+    lms
+      ? `<div class="lms-linked" style="--lc:${LMS[lms.provider].color}"><span class="lms-logo">${LMS[lms.provider].icon}</span>
+           <div><b>${esc(lms.course_name || lms.course_id)}</b><div class="muted small">${LMS[lms.provider].name}${st[lms.provider].connected ? "" : " · ⚠️ cuenta desconectada"}</div></div>
+           <span class="spacer"></span><button type="button" class="ghost danger" id="unlink">Desvincular</button></div>
+         <h3>👥 Alumnos</h3>
+         <p class="muted small">Trae a los alumnos del curso. Empareja por email o nombre con los que ya tienes (no duplica ni borra a nadie).</p>
+         <button type="button" class="primary" id="roster">⬇ Importar / actualizar alumnos</button>
+         <div id="roster-res"></div>
+         <h3>📤 Notas</h3>
+         ${
+           lms.provider === "moodle"
+             ? `<p class="muted small">Moodle: descarga el CSV y en tu curso ve a <b>Calificaciones → Importar → Archivo CSV</b>; mapea por «Email address».</p>`
+             : `<div class="row"><select id="push-a" style="flex:1">${assessments
+                 .map((a) => `<option value="${a.id}">${esc(a.name)}${a.external ? " · ✓ vinculada" : ""}</option>`)
+                 .join("")}</select>
+                 <label class="row" style="gap:4px;color:inherit"><input type="checkbox" id="push-ret"> Devolver a los alumnos</label>
+                 <button type="button" class="primary" id="push">📤 Enviar notas</button></div>
+               <p class="muted small">Se crea una tarea calificada con el mismo nombre (la primera vez) y se ponen las notas de los alumnos vinculados.</p>
+               <div id="push-res"></div>`
+         }
+         <button type="button" id="lmscsv">⬇ CSV con email (Moodle / otras plataformas)</button>`
+      : connected.length
+        ? `<p class="muted">Elige la plataforma y el curso que corresponde a este grupo.</p>
+           <div class="row">${connected.map((x) => `<button type="button" data-prov="${x}">${LMS[x].icon} ${LMS[x].name}</button>`).join("")}</div>
+           <div id="courses"></div>`
+        : `<div class="empty"><div style="font-size:40px">🔌</div>Aún no conectaste ninguna plataforma.<br><a href="#/integraciones" id="go-int">Ir a Integraciones</a></div>`,
+    { submit: "", wide: true },
+  );
+  const dlg = $$("dialog").at(-1);
+  const refreshGroup = async () => {
+    state.groups = await api("/groups");
+    return state.groups.find((x) => x.id === g.id);
+  };
+  $("#go-int", dlg) && ($("#go-int", dlg).onclick = () => dlg.close());
+  $$("[data-prov]", dlg).forEach(
+    (b) =>
+      (b.onclick = (e) =>
+        busy(e.currentTarget, async () => {
+          const list = await api(`/integrations/${b.dataset.prov}/courses`);
+          $("#courses", dlg).innerHTML = list.length
+            ? `<div class="list">${list
+                .map(
+                  (c) => `<div class="list-item"><div style="flex:1"><b>${esc(c.name)}</b>${c.section ? `<div class="muted small">${esc(c.section)}</div>` : ""}</div>
+                    <button type="button" class="primary" data-course="${esc(c.id)}" data-cname="${esc(c.name)}">Vincular</button></div>`,
+                )
+                .join("")}</div>`
+            : `<p class="muted">No encontré cursos activos donde seas docente.</p>`;
+          $$("[data-course]", dlg).forEach(
+            (cb) =>
+              (cb.onclick = async () => {
+                try {
+                  await api(`/groups/${g.id}/lms/link`, { method: "POST", body: { provider: b.dataset.prov, course_id: cb.dataset.course, course_name: cb.dataset.cname } });
+                  toast("Grupo vinculado ✔");
+                  dlg.close();
+                  const ng = await refreshGroup();
+                  route();
+                  lmsDialog(ng);
+                } catch (err) {
+                  fail(err);
+                }
+              }),
+          );
+        })),
+  );
+  $("#unlink", dlg) &&
+    ($("#unlink", dlg).onclick = async () => {
+      if (!confirm("¿Desvincular este grupo del curso? No se borra nada.")) return;
+      await api(`/groups/${g.id}/lms/link`, { method: "POST", body: { provider: null } }).catch(fail);
+      dlg.close();
+      await refreshGroup();
+      route();
+    });
+  $("#roster", dlg) &&
+    ($("#roster", dlg).onclick = (e) =>
+      busy(e.currentTarget, async () => {
+        const r = await api(`/groups/${g.id}/lms/roster`, { method: "POST", body: {} });
+        $("#roster-res", dlg).innerHTML = `<div class="ai-box">✅ ${r.total} alumnos en el curso · <b>${r.created}</b> nuevos · <b>${r.linked}</b> emparejados · ${r.unchanged} sin cambios${
+          r.not_in_lms ? ` · ⚠️ ${r.not_in_lms} de tu lista no están en el curso` : ""
+        }</div>`;
+        if (r.created) state.groups = await api("/groups");
+      }));
+  $("#push", dlg) &&
+    ($("#push", dlg).onclick = (e) =>
+      busy(e.currentTarget, async () => {
+        const r = await api(`/assessments/${$("#push-a", dlg).value}/lms/push`, { method: "POST", body: { return: $("#push-ret", dlg).checked } });
+        $("#push-res", dlg).innerHTML = `<div class="ai-box">${r.pending ? "⏳ " + esc(r.message) : `✅ ${r.pushed} notas enviadas${r.returned ? " y devueltas" : ""}`}${
+          r.without_link ? ` · ⚠️ ${r.without_link} alumnos con nota no están vinculados (importa alumnos primero)` : ""
+        }${r.link ? ` · <a href="${esc(r.link)}" target="_blank" rel="noopener">Abrir tarea ↗</a>` : ""}</div>`;
+      }));
+  $("#lmscsv", dlg) &&
+    ($("#lmscsv", dlg).onclick = async () => {
+      const res = await fetch(`/groups/${g.id}/export/lms.csv`, { headers: { Authorization: `Bearer ${state.token}` } });
+      if (!res.ok) return toast("No se pudo descargar", true);
+      const url = URL.createObjectURL(await res.blob());
+      Object.assign(document.createElement("a"), { href: url, download: `notas-${g.name}.csv` }).click();
+      URL.revokeObjectURL(url);
+    });
+  await p;
+}
+
+// ───────── Importar alumnos desde CSV de cualquier plataforma ─────────
+function parseCSV(text) {
+  const sep = (text.split("\n")[0].match(/;/g) || []).length > (text.split("\n")[0].match(/,/g) || []).length ? ";" : text.includes("\t") ? "\t" : ",";
+  const rows = [];
+  let row = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) {
+      if (ch === '"' && text[i + 1] === '"') (cell += '"'), i++;
+      else if (ch === '"') q = false;
+      else cell += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === sep) row.push(cell), (cell = "");
+    else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell), rows.push(row), (row = []), (cell = "");
+    } else cell += ch;
+  }
+  if (cell || row.length) row.push(cell), rows.push(row);
+  return rows.filter((r) => r.some((x) => x.trim()));
+}
+
+async function csvImportDialog(g, existing, done) {
+  const p = modal(
+    "📄 Importar alumnos desde CSV",
+    `<p class="muted">Sirve el CSV exportado de Google Classroom, Teams, Moodle, Excel o tu sistema escolar. Detecto las columnas de nombre, apellidos y email.</p>
+     <input type="file" id="csvfile" accept=".csv,.txt,text/csv">
+     <div id="csvprev"></div>`,
+    { submit: "" },
+  );
+  const dlg = $$("dialog").at(-1);
+  const key = (s) => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  const find = (h, words) => h.findIndex((x) => words.some((w) => key(x) === w || key(x).includes(w)));
+  $("#csvfile", dlg).onchange = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const rows = parseCSV((await f.text()).replace(/^﻿/, ""));
+    if (rows.length < 2) return toast("El archivo no tiene filas de datos", true);
+    const h = rows[0];
+    const iFirst = find(h, ["first name", "given name", "nombre(s)", "nombres", "firstname", "nombre"]);
+    const iLast = find(h, ["last name", "surname", "family name", "apellidos", "apellido", "lastname"]);
+    const iFull = find(h, ["full name", "nombre completo", "display name", "student name", "alumno", "estudiante"]);
+    const iMail = find(h, ["email", "e-mail", "correo", "mail"]);
+    const sel = (name, idx) =>
+      `<label>${name}<select data-col="${name}"><option value="-1">— ninguna —</option>${h.map((c, i) => `<option value="${i}" ${i === idx ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>`;
+    $("#csvprev", dlg).innerHTML = `<div class="form-grid">${sel("Nombre", iFirst === iFull ? -1 : iFirst)}${sel("Apellidos", iLast)}${sel("Nombre completo", iFull)}${sel("Email", iMail)}</div>
+      <div id="csvtable"></div><button type="button" class="primary" id="csvgo">Importar</button>`;
+    let out = [];
+    const build = () => {
+      const col = (n) => +$(`[data-col="${n}"]`, dlg).value;
+      const [cf, cl, cn, cm] = ["Nombre", "Apellidos", "Nombre completo", "Email"].map(col);
+      const have = new Set(existing.map((s) => key(s.email || "")).filter(Boolean));
+      const haveName = new Set(existing.map((s) => key(`${s.first_name} ${s.last_name}`)));
+      out = rows.slice(1).map((r) => {
+        let first = cf >= 0 ? r[cf] : "", last = cl >= 0 ? r[cl] : "";
+        if ((!first || !last) && cn >= 0 && r[cn]) {
+          const full = r[cn].trim();
+          if (full.includes(",")) [last, first] = full.split(",").map((x) => x.trim());
+          else [first, ...last] = full.split(/\s+/), (last = last.join(" "));
+        }
+        const email = cm >= 0 ? (r[cm] || "").trim() || null : null;
+        const dup = (email && have.has(key(email))) || haveName.has(key(`${first} ${last}`));
+        return { first_name: (first || "").trim(), last_name: (last || "").trim(), email, dup };
+      }).filter((s) => s.first_name || s.last_name);
+      const nuevos = out.filter((s) => !s.dup);
+      $("#csvtable", dlg).innerHTML = `<p class="muted small">${out.length} filas · <b>${nuevos.length} nuevos</b> · ${out.length - nuevos.length} ya existen (se omiten)</p>
+        <div class="table-wrap" style="max-height:240px"><table><thead><tr><th>Nombre</th><th>Apellidos</th><th>Email</th><th></th></tr></thead><tbody>${out
+          .slice(0, 100)
+          .map((s) => `<tr class="${s.dup ? "muted" : ""}"><td>${esc(s.first_name)}</td><td>${esc(s.last_name)}</td><td>${esc(s.email || "")}</td><td>${s.dup ? "ya existe" : "✚"}</td></tr>`)
+          .join("")}</tbody></table></div>`;
+    };
+    $$("[data-col]", dlg).forEach((s) => (s.onchange = build));
+    build();
+    $("#csvgo", dlg).onclick = (ev) =>
+      busy(ev.currentTarget, async () => {
+        const nuevos = out.filter((s) => !s.dup).map(({ dup, ...s }) => ({ ...s, first_name: s.first_name || "-", last_name: s.last_name || "-" }));
+        if (!nuevos.length) return toast("No hay alumnos nuevos que importar", true);
+        for (let i = 0; i < nuevos.length; i += 200) await api(`/groups/${g.id}/students`, { method: "POST", body: nuevos.slice(i, i + 200) });
+        toast(`${nuevos.length} alumnos importados`);
+        dlg.close();
+      });
+  };
+  await p;
+  done();
 }
 
 // ───────── Rúbricas ─────────

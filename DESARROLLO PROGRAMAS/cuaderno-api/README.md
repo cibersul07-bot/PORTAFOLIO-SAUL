@@ -24,6 +24,20 @@ Funciones del cuaderno:
 - **Recursos** del grupo (enlaces a documentos, videos, presentaciones).
 - **Copia de seguridad** del grupo en JSON (💾).
 
+## Integraciones con LMS (🔌)
+| Plataforma | Importar alumnos | Enviar notas | Requisito |
+|---|---|---|---|
+| Google Classroom | ✅ | ✅ crea la tarea y pone `assignedGrade` (opcional: devolver) | App OAuth en Google Cloud → `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
+| Microsoft Teams | ✅ | ✅ crea y publica la tarea, pone puntos | App en Microsoft Entra con `EduRoster.ReadBasic`, `EduAssignments.ReadWrite` → `MS_CLIENT_ID`, `MS_CLIENT_SECRET` |
+| Moodle | ✅ | CSV para *Calificaciones → Importar* | URL https + token de servicios web del docente |
+| Otras | CSV de cualquier plataforma | CSV con email | Claves de API `ck_…` para Zapier/Make/scripts |
+
+URIs de redirección: `https://<tu-worker>/oauth/google/callback` y `https://<tu-worker>/oauth/microsoft/callback`.
+Las credenciales de cada docente se guardan cifradas (AES-GCM) en D1; las claves de API solo se guardan como hash.
+
+Para probar en local sin cuentas reales existen variables opcionales que apuntan a un servidor simulado:
+`GOOGLE_AUTH_URL`, `GOOGLE_TOKEN_URL`, `GOOGLE_API_BASE`, `GOOGLE_USERINFO_URL`, `MS_AUTHORITY`, `GRAPH_BASE`.
+
 ## Autenticación
 - `POST /auth/register` `{email, password, name}` → `{token}`
 - `POST /auth/login` `{email, password}` → `{token}`
@@ -51,7 +65,10 @@ Funciones del cuaderno:
 | Quizzes | `GET/POST /groups/:id/quizzes`, `PATCH/DELETE /quizzes/:id`, `GET /quizzes/:id/responses`, `DELETE /quizzes/:id/responses/:student_id` |
 | Auto/coevaluación | `GET/POST /groups/:id/evals`, `PATCH/DELETE /evals/:id`, `GET /evals/:id/responses`, `POST /evals/:id/to-gradebook` `{source}` |
 | Copia de seguridad | `GET /groups/:id/export` |
-| Público (sin login) | `GET/POST /p/quiz/:token`, `GET/POST /p/eval/:token` |
+| Público (sin login) | `GET/POST /p/quiz/:token`, `GET/POST /p/eval/:token`, `GET /oauth/:provider/callback` |
+| Integraciones | `GET /integrations`, `GET /integrations/:p/start`, `POST /integrations/moodle` `{url, token}`, `DELETE /integrations/:p`, `GET /integrations/:p/courses` |
+| Sincronización | `POST /groups/:id/lms/link` `{provider, course_id, course_name}`, `POST /groups/:id/lms/roster`, `POST /assessments/:id/lms/push` `{return?}`, `GET /groups/:id/export/lms.csv` |
+| Claves de API | `GET/POST /api-keys`, `DELETE /api-keys/:id` (usar como `Authorization: Bearer ck_…`) |
 
 Estados de asistencia: `present | absent | late | excused`.
 Media: promedio ponderado por evaluación dentro de cada categoría, luego ponderado por el peso de la categoría, escalado a `grading_scale` del grupo.

@@ -4,8 +4,18 @@ import { HTTPException } from "hono/http-exception";
 import { sign, verify } from "hono/jwt";
 import { hashPassword, verifyPassword } from "./auth";
 import { registerFeatures } from "./features";
+import { registerIntegrations, sha256hex } from "./integrations";
 
-type Bindings = { DB: D1Database; AI: Ai; JWT_SECRET: string; AI_MODEL?: string };
+type Bindings = {
+  DB: D1Database;
+  AI: Ai;
+  JWT_SECRET: string;
+  AI_MODEL?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  MS_CLIENT_ID?: string;
+  MS_CLIENT_SECRET?: string;
+};
 type Vars = { teacherId: string };
 type C = Context<{ Bindings: Bindings; Variables: Vars }>;
 
@@ -76,8 +86,19 @@ const api = new Hono<{ Bindings: Bindings; Variables: Vars }>();
 api.use("*", async (c, next) => {
   const h = c.req.header("Authorization") ?? "";
   if (!h.startsWith("Bearer ")) bad("Token requerido", 401);
+  const tok = h.slice(7).trim();
+  if (tok.startsWith("ck_")) {
+    // Clave de API personal (otras plataformas / automatizaciones)
+    const k = await c.env.DB.prepare("SELECT id, teacher_id FROM api_keys WHERE key_hash = ?")
+      .bind(await sha256hex(tok))
+      .first<{ id: string; teacher_id: string }>();
+    if (!k) bad("Clave de API no válida", 401);
+    c.set("teacherId", k!.teacher_id);
+    c.executionCtx.waitUntil(c.env.DB.prepare("UPDATE api_keys SET last_used = datetime('now') WHERE id = ?").bind(k!.id).run());
+    return next();
+  }
   try {
-    const p = await verify(h.slice(7), c.env.JWT_SECRET, "HS256");
+    const p = await verify(tok, c.env.JWT_SECRET, "HS256");
     c.set("teacherId", p.sub as string);
   } catch {
     bad("Token inválido o caducado", 401);
@@ -718,5 +739,6 @@ api.post("/ai/plan", async (c) => {
 
 // Las rutas públicas /p/* se registran en app antes de montar la API protegida
 registerFeatures(app, api, { ownGroup, ownRubric, body, need, bad, patch, id, ask });
+registerIntegrations(app as any, api as any, { ownGroup, body, need, bad, id });
 app.route("/", api);
 export default app;
