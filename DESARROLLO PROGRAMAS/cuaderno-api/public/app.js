@@ -178,11 +178,58 @@ function renderAuth(mode = "login") {
 }
 
 // ───────── Inicio ─────────
+// ───────── Mensajes motivacionales ─────────
+const MOTIVATION = [
+  ["🌱", "Cada clase es una semilla. No siempre verás la cosecha, pero siempre la estás sembrando."],
+  ["✨", "Hoy alguien va a entender algo por primera vez gracias a ti."],
+  ["🧭", "No enseñas solo un tema: enseñas a no rendirse ante lo difícil."],
+  ["💪", "Los días difíciles también cuentan. Lo que haces importa, aunque hoy no lo parezca."],
+  ["🔥", "La curiosidad se contagia. Llega con ganas y tu grupo te seguirá."],
+  ["🎯", "Un pequeño avance de cada alumno vale más que un gran plan sin empezar."],
+  ["📚", "Aprender nunca es tarde: tus alumnos de 15 y de 64 años son la prueba."],
+  ["🤝", "Recordar el nombre y la historia de cada alumno también es enseñar."],
+  ["🌟", "Celebra los aciertos en voz alta y corrige los errores en voz baja."],
+  ["🛠️", "Equivocarse en clase no es fallar: es el laboratorio donde se aprende."],
+  ["☕", "Cuídate tú también. Un docente descansado enseña el doble de bien."],
+  ["🚀", "La tecnología cambia rápido; las ganas de aprender son lo que nunca pasa de moda."],
+  ["🗝️", "Una buena pregunta abre más puertas que cien respuestas."],
+  ["🌈", "Cada alumno avanza a su ritmo. Tu paciencia es parte de la lección."],
+  ["🏁", "No hace falta que la clase sea perfecta. Hace falta que sea tuya y con corazón."],
+  ["💡", "Lo que hoy te parece rutina, para alguien será el día en que todo hizo clic."],
+  ["🙌", "Tu ejemplo enseña más que cualquier manual: sigue aprendiendo junto a ellos."],
+  ["📝", "Evaluar no es juzgar: es mostrarle a cada uno cuánto ha crecido."],
+  ["🌻", "Una palabra de ánimo a tiempo puede cambiar el rumbo de un alumno."],
+  ["⏳", "Lo importante no es terminar el temario, sino que nadie se quede atrás."],
+  ["🎓", "Enseñar es la profesión que hace posibles todas las demás."],
+  ["🧩", "Cuando un alumno no entiende, no es un muro: es una invitación a explicarlo distinto."],
+  ["🌄", "Nuevo día, nueva oportunidad de inspirar. ¡A por ello!"],
+  ["❤️", "Gracias por elegir enseñar. Tu trabajo deja huella."],
+];
+const dayIndex = () => Math.floor((Date.now() - new Date().getTimezoneOffset() * 60000) / 864e5);
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? "Buenos días" : h < 19 ? "Buenas tardes" : "Buenas noches";
+}
+function motivationCard(i) {
+  const [icon, text] = MOTIVATION[((i % MOTIVATION.length) + MOTIVATION.length) % MOTIVATION.length];
+  return `<div class="motivation" id="motivation" data-i="${i}">
+    <div class="motivation-icon">${icon}</div>
+    <div class="motivation-text"><small>Mensaje del día</small><p>${esc(text)}</p></div>
+    <button class="ghost" id="next-msg" title="Otro mensaje" aria-label="Otro mensaje">↻</button>
+  </div>`;
+}
+
 function renderHome() {
+  let fecha = new Date().toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" });
+  fecha = fecha.charAt(0).toUpperCase() + fecha.slice(1);
+  const total = state.groups.reduce((n, g) => n + (g.student_count || 0), 0);
   shell(
     "home",
-    `<div class="header"><h2>Hola, ${esc(state.me?.name?.split(" ")[0])} 👋</h2><span class="spacer"></span>
+    `<div class="header"><div><h2>${greeting()}, ${esc(state.me?.name?.split(" ")[0])} 👋</h2>
+      <div class="muted">${fecha}${state.groups.length ? ` · ${state.groups.length} grupo${state.groups.length > 1 ? "s" : ""} · ${total} alumnos` : ""}</div></div>
+      <span class="spacer"></span>
       <button class="primary" id="add">＋ Nuevo grupo</button></div>
+    ${motivationCard(dayIndex())}
     ${
       state.groups.length
         ? `<div class="grid-cards">${state.groups
@@ -197,6 +244,13 @@ function renderHome() {
     }`,
   );
   $("#add").onclick = () => groupDialog();
+  const bindNext = () =>
+    ($("#next-msg").onclick = () => {
+      const box = $("#motivation");
+      box.outerHTML = motivationCard(Number(box.dataset.i) + 1);
+      bindNext();
+    });
+  bindNext();
   $$(".group-card").forEach((el) => (el.onclick = () => (location.hash = `#/g/${el.dataset.id}`)));
 }
 

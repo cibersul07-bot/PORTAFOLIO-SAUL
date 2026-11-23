@@ -100,6 +100,20 @@ label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .menu-btn { display: none; }
 
+/* Mensaje motivacional */
+.motivation {
+  display: flex; gap: 16px; align-items: center; margin-bottom: 20px; padding: 18px 20px; border-radius: 14px;
+  background: linear-gradient(120deg, #3b5bdb 0%, #7048e8 55%, #c2255c 100%); color: #fff; box-shadow: var(--shadow);
+  animation: fadein .45s ease;
+}
+.motivation-icon { font-size: 34px; flex: none; width: 56px; height: 56px; display: grid; place-items: center; background: rgba(255,255,255,.18); border-radius: 50%; }
+.motivation-text { flex: 1; }
+.motivation-text small { text-transform: uppercase; letter-spacing: .08em; font-size: 11px; opacity: .85; }
+.motivation-text p { margin: 4px 0 0; font-size: 17px; line-height: 1.4; font-weight: 500; }
+.motivation button { color: #fff; font-size: 20px; border-radius: 50%; width: 38px; height: 38px; padding: 0; flex: none; }
+.motivation button:hover { background: rgba(255,255,255,.18); border-color: transparent; }
+@keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
 @media (max-width: 800px) {
   .layout { grid-template-columns: 1fr; }
   .sidebar { position: fixed; inset: 0 30% 0 0; z-index: 50; transform: translateX(-100%); transition: transform .2s; }
