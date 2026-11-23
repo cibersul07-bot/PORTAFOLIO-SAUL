@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { sign, verify } from "hono/jwt";
 import { hashPassword, verifyPassword } from "./auth";
+import { registerFeatures } from "./features";
 
 type Bindings = { DB: D1Database; AI: Ai; JWT_SECRET: string; AI_MODEL?: string };
 type Vars = { teacherId: string };
@@ -97,7 +98,7 @@ async function ownGroup(c: C, groupId: string) {
     .bind(groupId, c.get("teacherId"))
     .first<Record<string, any>>();
   if (!g) bad("Grupo no encontrado", 404);
-  return g!;
+  return parseSettings(g!);
 }
 async function ownStudent(c: C, studentId: string) {
   const s = await c.env.DB.prepare(
@@ -137,6 +138,14 @@ async function patch(c: C, table: string, rowId: string, b: Record<string, any>,
 // ───────────── Grupos ─────────────
 const GROUP_FIELDS = ["name", "subject", "school_year", "color", "grading_scale"];
 
+const parseSettings = (g: any) => {
+  try {
+    return { ...g, settings: typeof g.settings === "string" ? JSON.parse(g.settings || "{}") : (g.settings ?? {}) };
+  } catch {
+    return { ...g, settings: {} };
+  }
+};
+
 api.get("/groups", async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT g.*, (SELECT COUNT(*) FROM students s WHERE s.group_id = g.id) AS student_count
@@ -144,7 +153,7 @@ api.get("/groups", async (c) => {
   )
     .bind(c.get("teacherId"))
     .all();
-  return c.json(results);
+  return c.json(results.map(parseSettings));
 });
 api.post("/groups", async (c) => {
   const b = await body(c);
@@ -159,8 +168,14 @@ api.post("/groups", async (c) => {
 });
 api.get("/groups/:id", async (c) => c.json(await ownGroup(c, c.req.param("id"))));
 api.patch("/groups/:id", async (c) => {
-  await ownGroup(c, c.req.param("id"));
-  await patch(c, "groups", c.req.param("id"), await body(c), GROUP_FIELDS);
+  const g = await ownGroup(c, c.req.param("id"));
+  const b = await body(c);
+  // settings se fusiona con lo existente (plano, fórmulas y umbrales no se pisan entre sí)
+  if (b.settings !== undefined) {
+    if (typeof b.settings !== "object" || Array.isArray(b.settings)) bad("settings debe ser un objeto");
+    b.settings = JSON.stringify({ ...g.settings, ...b.settings });
+  }
+  await patch(c, "groups", c.req.param("id"), b, [...GROUP_FIELDS, "settings"]);
   return c.json(await ownGroup(c, c.req.param("id")));
 });
 api.delete("/groups/:id", async (c) => {
@@ -246,7 +261,7 @@ api.delete("/categories/:id", async (c) => {
 });
 
 // ───────────── Evaluaciones (columnas) y notas ─────────────
-const ASSESS_FIELDS = ["name", "date", "term", "max_score", "weight", "category_id", "rubric_id", "kind"];
+const ASSESS_FIELDS = ["name", "date", "term", "max_score", "weight", "category_id", "rubric_id", "kind", "competencies"];
 const KINDS = ["numeric", "emoji", "check"];
 
 api.get("/groups/:id/assessments", async (c) => {
@@ -268,9 +283,9 @@ api.post("/groups/:id/assessments", async (c) => {
   if (b.rubric_id) await ownRubric(c, b.rubric_id);
   const aid = id();
   await c.env.DB.prepare(
-    "INSERT INTO assessments (id, group_id, category_id, rubric_id, name, date, term, max_score, weight, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO assessments (id, group_id, category_id, rubric_id, name, date, term, max_score, weight, kind, competencies) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   )
-    .bind(aid, gid, b.category_id ?? null, b.rubric_id ?? null, b.name, b.date ?? null, b.term ?? null, b.max_score ?? 10, b.weight ?? 1, b.kind ?? "numeric")
+    .bind(aid, gid, b.category_id ?? null, b.rubric_id ?? null, b.name, b.date ?? null, b.term ?? null, b.max_score ?? 10, b.weight ?? 1, b.kind ?? "numeric", JSON.stringify(Array.isArray(b.competencies) ? b.competencies : []))
     .run();
   return c.json(await ownAssessment(c, aid), 201);
 });
@@ -278,6 +293,7 @@ api.patch("/assessments/:id", async (c) => {
   await ownAssessment(c, c.req.param("id"));
   const pb = await body(c);
   if (pb.kind !== undefined && !KINDS.includes(pb.kind)) bad(`kind debe ser uno de ${KINDS.join(", ")}`);
+  if (pb.competencies !== undefined) pb.competencies = JSON.stringify(Array.isArray(pb.competencies) ? pb.competencies : []);
   await patch(c, "assessments", c.req.param("id"), pb, ASSESS_FIELDS);
   return c.json(await ownAssessment(c, c.req.param("id")));
 });
@@ -304,12 +320,16 @@ api.put("/assessments/:id/grades", async (c) => {
     if (g.score !== null && g.score !== undefined && (g.score < 0 || g.score > a.max_score))
       bad(`Nota fuera de rango (0-${a.max_score}) para ${g.student_id}`);
   }
+  // Solo se actualiza lo que viene: { score } no borra el comentario y { comment } no borra la nota
   await c.env.DB.batch(
     list.map((g) =>
       c.env.DB.prepare(
-        `INSERT INTO grades (assessment_id, student_id, score, comment) VALUES (?, ?, ?, ?)
-         ON CONFLICT(assessment_id, student_id) DO UPDATE SET score = excluded.score, comment = excluded.comment, updated_at = datetime('now')`,
-      ).bind(a.id, g.student_id, g.score ?? null, g.comment ?? null),
+        `INSERT INTO grades (assessment_id, student_id, score, comment) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(assessment_id, student_id) DO UPDATE SET
+           score = CASE WHEN ?5 THEN excluded.score ELSE grades.score END,
+           comment = CASE WHEN ?6 THEN excluded.comment ELSE grades.comment END,
+           updated_at = datetime('now')`,
+      ).bind(a.id, g.student_id, g.score ?? null, g.comment || null, "score" in g ? 1 : 0, "comment" in g ? 1 : 0),
     ),
   );
   return c.json({ saved: list.length });
@@ -346,48 +366,84 @@ api.post("/assessments/:id/rubric-score", async (c) => {
 async function computeGradebook(c: C, gid: string, term?: string) {
   const g = await ownGroup(c, gid);
   const db = c.env.DB;
-  const [students, cats, assess, grades] = await Promise.all([
+  const [students, cats, assess, grades, comps] = await Promise.all([
     db.prepare("SELECT id, first_name, last_name FROM students WHERE group_id = ? ORDER BY last_name, first_name").bind(gid).all<any>(),
     db.prepare("SELECT * FROM categories WHERE group_id = ?").bind(gid).all<any>(),
     db.prepare(`SELECT * FROM assessments WHERE group_id = ? ${term ? "AND term = ?" : ""} ORDER BY date, created_at`)
       .bind(...(term ? [gid, term] : [gid])).all<any>(),
     db.prepare("SELECT gr.* FROM grades gr JOIN assessments a ON a.id = gr.assessment_id WHERE a.group_id = ?").bind(gid).all<any>(),
+    db.prepare("SELECT * FROM competencies WHERE group_id = ? ORDER BY code, name").bind(gid).all<any>(),
   ]);
   const scale = g.grading_scale ?? 10;
+  const formula: string = g.settings?.formula ?? "weighted";
+  const dropLowest = Math.max(0, Math.floor(Number(g.settings?.drop_lowest ?? 0)));
+  const r2 = (v: number) => Math.round(v * scale * 100) / 100;
   const catWeight = new Map(cats.results.map((k: any) => [k.id, k.weight]));
   const gradeMap = new Map(grades.results.map((x: any) => [`${x.assessment_id}|${x.student_id}`, x]));
+  const assessments = assess.results.map((a: any) => {
+    let competencies: string[] = [];
+    try {
+      competencies = JSON.parse(a.competencies || "[]");
+    } catch {}
+    return { ...a, competencies };
+  });
 
   const rows = students.results.map((s: any) => {
-    const buckets = new Map<string, { sum: number; w: number }>();
     const scores: Record<string, number | null> = {};
-    for (const a of assess.results) {
+    const comments: Record<string, string> = {};
+    let items: { a: any; pct: number }[] = [];
+    for (const a of assessments) {
       const gr = gradeMap.get(`${a.id}|${s.id}`);
       scores[a.id] = gr?.score ?? null;
+      if (gr?.comment) comments[a.id] = gr.comment;
       if (gr?.score === null || gr?.score === undefined) continue;
-      const key = a.category_id && catWeight.has(a.category_id) ? a.category_id : "_none";
-      const bk = buckets.get(key) ?? { sum: 0, w: 0 };
-      bk.sum += (gr.score / a.max_score) * a.weight;
-      bk.w += a.weight;
-      buckets.set(key, bk);
+      items.push({ a, pct: gr.score / a.max_score });
     }
-    let total = 0, tw = 0;
+    // Descartar las N peores notas (si quedan al menos 2)
+    if (dropLowest && items.length > dropLowest + 1) {
+      items = [...items].sort((x, y) => x.pct - y.pct).slice(dropLowest);
+    }
+    let average: number | null = null;
     const by_category: Record<string, number> = {};
-    for (const [k, bk] of buckets) {
-      if (!bk.w) continue;
-      const avg = bk.sum / bk.w;
-      by_category[k] = Math.round(avg * scale * 100) / 100;
-      const w = k === "_none" ? 1 : (catWeight.get(k) as number);
-      total += avg * w;
-      tw += w;
+    if (items.length) {
+      if (formula === "mean") {
+        average = r2(items.reduce((t, i) => t + i.pct, 0) / items.length);
+      } else if (formula === "median") {
+        const v = items.map((i) => i.pct).sort((x, y) => x - y);
+        const m = Math.floor(v.length / 2);
+        average = r2(v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2);
+      } else {
+        const buckets = new Map<string, { sum: number; w: number }>();
+        for (const { a, pct } of items) {
+          const key = a.category_id && catWeight.has(a.category_id) ? a.category_id : "_none";
+          const bk = buckets.get(key) ?? { sum: 0, w: 0 };
+          bk.sum += pct * a.weight;
+          bk.w += a.weight;
+          buckets.set(key, bk);
+        }
+        let total = 0, tw = 0;
+        for (const [k, bk] of buckets) {
+          if (!bk.w) continue;
+          const avg = bk.sum / bk.w;
+          by_category[k] = r2(avg);
+          const w = k === "_none" ? 1 : (catWeight.get(k) as number);
+          total += avg * w;
+          tw += w;
+        }
+        average = tw ? r2(total / tw) : null;
+      }
     }
-    return {
-      student: s,
-      scores,
-      by_category,
-      average: tw ? Math.round((total / tw) * scale * 100) / 100 : null,
-    };
+    // Media por competencia (todas las notas de actividades vinculadas)
+    const by_competency: Record<string, number> = {};
+    for (const comp of comps.results) {
+      const v = assessments
+        .filter((a: any) => a.competencies.includes(comp.id) && scores[a.id] != null)
+        .map((a: any) => (scores[a.id] as number) / a.max_score);
+      if (v.length) by_competency[comp.id] = r2(v.reduce((t: number, x: number) => t + x, 0) / v.length);
+    }
+    return { student: s, scores, comments, by_category, by_competency, average };
   });
-  return { group: g, categories: cats.results, assessments: assess.results, rows };
+  return { group: g, categories: cats.results, competencies: comps.results, assessments, rows, formula, drop_lowest: dropLowest };
 }
 
 api.get("/groups/:id/gradebook", async (c) => c.json(await computeGradebook(c, c.req.param("id"), c.req.query("term"))));
@@ -660,5 +716,7 @@ api.post("/ai/plan", async (c) => {
   }
 });
 
+// Las rutas públicas /p/* se registran en app antes de montar la API protegida
+registerFeatures(app, api, { ownGroup, ownRubric, body, need, bad, patch, id, ask });
 app.route("/", api);
 export default app;

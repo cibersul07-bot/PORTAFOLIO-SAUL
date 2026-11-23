@@ -203,6 +203,96 @@ table.gb tbody tr:hover td { background: color-mix(in srgb, var(--primary) 5%, v
 .att-strip i.current { outline: 2px solid var(--text); outline-offset: 1px; }
 @media (max-width: 800px) { .stat.wide { grid-column: auto; } .kind-picker { grid-template-columns: 1fr; } }
 
+/* ───── Controles segmentados ───── */
+.seg-ctl { display: inline-flex; background: var(--none-bg); border-radius: 10px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+.seg-ctl button { border: 0; background: transparent; padding: 6px 12px; border-radius: 8px; }
+.seg-ctl button.on { background: var(--panel); box-shadow: var(--shadow); color: var(--primary); font-weight: 600; }
+.magic-btn { background: linear-gradient(120deg, #7048e8, #c2255c); color: #fff; border: 0; }
+.magic-btn:hover { filter: brightness(1.1); }
+button.big { font-size: 17px; padding: 11px 22px; border-radius: 12px; }
+
+/* Comentarios en celdas */
+td.gcell { position: relative; }
+td.has-comment::after { content: ""; position: absolute; top: 3px; right: 3px; border: 6px solid transparent; border-top-color: var(--primary); border-right-color: var(--primary); border-radius: 0 3px 0 0; }
+
+/* Competencias */
+.comp-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.comp-opt { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 99px; padding: 4px 10px; color: var(--text); cursor: pointer; font-size: 13px; }
+.comp-opt:has(input:checked) { background: var(--primary-soft); border-color: var(--primary); }
+
+/* Plano de clase */
+.classroom { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; box-shadow: var(--shadow); overflow-x: auto; }
+.desk { text-align: center; background: linear-gradient(90deg, #2b3a55, #3b4f73); color: #fff; border-radius: 10px; padding: 8px; margin: 0 auto 16px; max-width: 420px; font-size: 13px; }
+.seat-grid { display: grid; gap: 10px; min-width: max-content; }
+.seat { min-height: 92px; border: 2px dashed var(--line); border-radius: 12px; display: grid; place-items: center; transition: background .15s, border-color .15s; }
+.seat.taken { border-style: solid; border-color: transparent; }
+.seat.over, .bench.over { border-color: var(--primary); background: var(--primary-soft); }
+.seat-student { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 6px; border-radius: 12px; background: var(--bg); width: 100%; height: 100%; cursor: pointer; border: 2px solid transparent; position: relative; user-select: none; }
+.seat-student:hover { border-color: var(--primary); }
+.seat-student.sel { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.seat-student.att-good { background: var(--good-bg); } .seat-student.att-bad { background: var(--bad-bg); opacity: .75; }
+.seat-student.att-mid { background: var(--mid-bg); } .seat-student.att-info { background: var(--info-bg); }
+.seat-name { font-size: 12px; font-weight: 600; text-align: center; line-height: 1.2; }
+.seat-meta { font-size: 14px; display: flex; gap: 2px; }
+.bench { margin-top: 12px; padding: 12px; border: 2px dashed var(--line); border-radius: 12px; }
+.bench-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.bench-list .seat-student { width: 96px; height: auto; }
+.seat-pop { flex-direction: column; align-items: stretch; }
+.seat-pop-title { display: flex; align-items: center; gap: 8px; padding: 2px 4px 6px; }
+.seat-pop button.on { background: var(--primary-soft); }
+
+/* Magic box */
+.magic-tabs { margin-bottom: 12px; }
+.tool-area { min-height: 300px; display: flex; flex-direction: column; gap: 14px; justify-content: center; }
+.tool-area:fullscreen { background: var(--panel); padding: 40px; }
+.rand-stage { text-align: center; padding: 20px; border-radius: 16px; background: linear-gradient(135deg, var(--primary-soft), var(--bg)); position: relative; overflow: hidden; min-height: 190px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+.rand-face { font-size: 60px; line-height: 1; }
+.rand-name { font-size: 26px; font-weight: 700; }
+.rand-name.win { color: var(--primary); animation: pop .4s ease; }
+.confetti { position: absolute; top: 8px; right: 16px; font-size: 40px; animation: pop .5s ease; }
+.teams { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.team { border-radius: 12px; padding: 10px; border-top: 5px solid var(--tc); background: var(--bg); display: flex; flex-direction: column; gap: 6px; }
+.team b { color: var(--tc); }
+.timer { font-size: clamp(64px, 14vw, 140px); font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.timer.warn { color: var(--mid); animation: pop 1s infinite; }
+.timer.done { color: var(--bad); }
+.timer-bar { height: 10px; background: var(--none-bg); border-radius: 99px; overflow: hidden; }
+.timer-bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--good), var(--primary)); transition: width 1s linear; }
+.noise-face { font-size: 110px; text-align: center; line-height: 1; }
+.noise-meter { position: relative; height: 26px; background: var(--none-bg); border-radius: 99px; overflow: hidden; }
+.noise-meter span { display: block; height: 100%; width: 0; transition: width .1s; }
+.noise-meter span.good { background: var(--good); } .noise-meter span.mid { background: var(--mid); } .noise-meter span.bad { background: var(--bad); }
+.noise-meter i { position: absolute; top: 0; bottom: 0; width: 3px; background: var(--text); }
+
+/* Quizzes y recursos */
+.chip.closed { background: var(--bad-bg); color: var(--bad); }
+.qbar { display: flex; align-items: center; gap: 8px; }
+.minibar { width: 120px; height: 8px; border-radius: 99px; background: var(--none-bg); overflow: hidden; flex: none; }
+.minibar i { display: block; height: 100%; }
+.lv-bg-good { background: var(--good); } .lv-bg-mid { background: var(--mid); } .lv-bg-bad { background: var(--bad); } .lv-bg-none { background: var(--line); }
+.res-card { display: flex; gap: 12px; align-items: flex-start; }
+.res-icon { font-size: 30px; width: 52px; height: 52px; display: grid; place-items: center; border-radius: 12px; background: var(--primary-soft); flex: none; }
+.btn-link { display: inline-block; padding: 6px 12px; border-radius: 8px; background: var(--primary); color: #fff; text-decoration: none; }
+.ai-row { background: var(--primary-soft); padding: 8px; border-radius: 10px; }
+
+/* Páginas públicas (alumnos) */
+.pub { min-height: 100vh; padding: 20px 14px; background: linear-gradient(160deg, var(--primary-soft), var(--bg) 40%); }
+.pub-card { max-width: 640px; margin: 0 auto; background: var(--panel); border-radius: 18px; padding: 20px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 14px; }
+.pub-card select { font-size: 16px; padding: 10px; }
+.pub-head { text-align: center; }
+.pub-head small { text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.pub-q { border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin: 0 0 12px; display: flex; flex-direction: column; gap: 8px; }
+.pub-q legend { font-weight: 600; padding: 0 6px; font-size: 15px; }
+.qnum { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 12px; margin-right: 4px; }
+.pub-opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 2px solid var(--line); border-radius: 12px; cursor: pointer; color: var(--text); font-size: 15px; }
+.pub-opt:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }
+.pub-opt input { margin-top: 3px; }
+.pub-result { text-align: center; }
+.big-face { font-size: 90px; line-height: 1; animation: pop .5s ease; }
+.score { font-size: 20px; }
+.pub-rev { padding: 10px 12px; border-radius: 10px; border-left: 5px solid; margin-bottom: 8px; }
+.pub-rev.ok { border-color: var(--good); background: var(--good-bg); } .pub-rev.ko { border-color: var(--bad); background: var(--bad-bg); }
+
 @media (max-width: 800px) {
   .layout { grid-template-columns: 1fr; }
   .sidebar { position: fixed; inset: 0 30% 0 0; z-index: 50; transform: translateX(-100%); transition: transform .2s; }

@@ -69,7 +69,7 @@ function modal(title, inner, { submit = "Guardar", wide = false } = {}) {
     d.innerHTML = `<div class="dlg-body"><form method="dialog">
       <h3>${esc(title)}</h3>${inner}
       <div class="row"><span class="spacer"></span>
-        <button type="button" data-cancel>Cancelar</button>
+        <button type="button" data-cancel>${submit ? "Cancelar" : "Cerrar"}</button>
         ${submit ? `<button class="primary" type="submit">${esc(submit)}</button>` : ""}
       </div></form></div>`;
     document.body.append(d);
@@ -77,7 +77,9 @@ function modal(title, inner, { submit = "Guardar", wide = false } = {}) {
     let result = null;
     form.addEventListener("submit", (e) => {
       e.preventDefault();
-      result = Object.fromEntries(new FormData(form));
+      const fd = new FormData(form);
+      result = Object.fromEntries(fd);
+      Object.defineProperty(result, "__fd", { value: fd });
       d.close();
     });
     $("[data-cancel]", d).onclick = () => d.close();
@@ -101,6 +103,9 @@ function logout() {
 // ───────── Router ─────────
 async function route() {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  // Páginas públicas para alumnos (no requieren sesión)
+  if (parts[0] === "q" && parts[1]) return renderPublicQuiz(parts[1]);
+  if (parts[0] === "e" && parts[1]) return renderPublicEval(parts[1]);
   if (!state.token) return renderAuth();
   if (parts[0] === "login") return (location.hash = "#/");
   try {
@@ -264,10 +269,27 @@ async function groupDialog(g) {
       <label>Curso escolar<input name="school_year" value="${esc(g?.school_year || "2026-27")}"></label>
       <label>Escala de notas<input name="grading_scale" type="number" min="1" step="any" value="${esc(g?.grading_scale ?? 10)}"></label>
       <label>Color<select name="color">${COLORS.map((c) => `<option value="${c}" ${g?.color === c ? "selected" : ""} style="color:${c}">● ${c}</option>`).join("")}</select></label>
+    </div>
+    <h3 style="margin-top:6px">🧮 Fórmula de la media</h3>
+    <div class="form-grid">
+      <label>Cálculo<select name="formula">
+        ${[["weighted", "Ponderada (pesos y categorías)"], ["mean", "Media simple"], ["median", "Mediana"]]
+          .map(([k, l]) => `<option value="${k}" ${(g?.settings?.formula || "weighted") === k ? "selected" : ""}>${l}</option>`)
+          .join("")}</select></label>
+      <label>Descartar las peores notas<input name="drop_lowest" type="number" min="0" max="5" value="${esc(g?.settings?.drop_lowest ?? 0)}"></label>
+    </div>
+    <h3 style="margin-top:6px">🎨 Condicionales (colores)</h3>
+    <div class="form-grid">
+      <label>🔴 → 🟡 Aprobado desde<input name="pass" type="number" min="0" step="any" value="${esc(g?.settings?.pass ?? (g?.grading_scale ?? 10) * 0.6)}"></label>
+      <label>🟡 → 🟢 Muy bien desde<input name="good" type="number" min="0" step="any" value="${esc(g?.settings?.good ?? (g?.grading_scale ?? 10) * 0.8)}"></label>
     </div>`,
   );
   if (!v) return;
   v.grading_scale = Number(v.grading_scale) || 10;
+  const pass = Number(v.pass), good = Number(v.good);
+  if (!(pass < good)) return toast("«Aprobado desde» debe ser menor que «Muy bien desde»", true);
+  v.settings = { formula: v.formula, drop_lowest: Number(v.drop_lowest) || 0, pass, good };
+  for (const k of ["formula", "drop_lowest", "pass", "good"]) delete v[k];
   try {
     const r = await api(g ? `/groups/${g.id}` : "/groups", { method: g ? "PATCH" : "POST", body: v });
     toast(g ? "Grupo actualizado" : "Grupo creado");
@@ -279,17 +301,37 @@ async function groupDialog(g) {
 }
 
 // ───────── Grupo ─────────
-const TABS = { cuaderno: "📊 Cuaderno", alumnos: "👥 Alumnos", asistencia: "✅ Asistencia", sesiones: "🗓️ Sesiones" };
+const TABS = {
+  cuaderno: "📊 Cuaderno",
+  alumnos: "👥 Alumnos",
+  asistencia: "✅ Asistencia",
+  plano: "🪑 Plano",
+  sesiones: "🗓️ Sesiones",
+  quizzes: "❓ Quizzes",
+  autoeval: "🪞 Auto/Coevaluación",
+  recursos: "📎 Recursos",
+};
+// Umbrales de color del grupo activo (en % de la escala)
+let TH = { pass: 0.6, good: 0.8 };
+function setThresholds(g) {
+  const sc = g.grading_scale || 10;
+  const p = Number(g.settings?.pass ?? sc * 0.6) / sc, gd = Number(g.settings?.good ?? sc * 0.8) / sc;
+  TH = p < gd ? { pass: p, good: gd } : { pass: 0.6, good: 0.8 };
+}
 
 async function renderGroup(gid, tab) {
   const g = state.groups.find((x) => x.id === gid);
   if (!g) return (location.hash = "#/");
+  setThresholds(g);
   shell(
     gid,
     `<div class="header">
       <span class="dot" style="background:${esc(g.color || COLORS[0])};width:14px;height:14px"></span>
       <h2>${esc(g.name)}</h2><span class="muted">${esc(g.subject || "")}</span><span class="spacer"></span>
-      <button id="edit-g">Editar</button><button class="danger" id="del-g">Eliminar</button>
+      <button class="magic-btn" id="magic">🪄 Magic box</button>
+      <button id="rand" title="Alumno aleatorio">🎲</button>
+      <button id="export" title="Descargar copia de seguridad (JSON)">💾</button>
+      <button id="edit-g">⚙️ Ajustes</button><button class="danger" id="del-g">Eliminar</button>
     </div>
     <div class="tabs">${Object.entries(TABS)
       .map(([k, v]) => `<a href="#/g/${gid}/${k}" class="${tab === k ? "active" : ""}">${v}</a>`)
@@ -307,7 +349,27 @@ async function renderGroup(gid, tab) {
       fail(e);
     }
   };
-  const fn = { cuaderno: tabGradebook, alumnos: tabStudents, asistencia: tabAttendance, sesiones: tabSessions }[tab] || tabGradebook;
+  $("#magic").onclick = () => magicBox(g);
+  $("#rand").onclick = () => magicBox(g, "random");
+  $("#export").onclick = async () => {
+    const res = await fetch(`/groups/${gid}/export`, { headers: { Authorization: `Bearer ${state.token}` } });
+    if (!res.ok) return toast("No se pudo exportar", true);
+    const url = URL.createObjectURL(await res.blob());
+    Object.assign(document.createElement("a"), { href: url, download: `copia-${g.name}-${today()}.json` }).click();
+    URL.revokeObjectURL(url);
+    toast("Copia de seguridad descargada");
+  };
+  const fn =
+    {
+      cuaderno: tabGradebook,
+      alumnos: tabStudents,
+      asistencia: tabAttendance,
+      plano: tabSeating,
+      sesiones: tabSessions,
+      quizzes: tabQuizzes,
+      autoeval: tabEvals,
+      recursos: tabResources,
+    }[tab] || tabGradebook;
   try {
     await fn(g, $("#tab"));
   } catch (e) {
@@ -328,8 +390,9 @@ const FACES = [
   { e: "😟", label: "Triste", pct: 0.3 },
 ];
 const faceFor = (pct) => (pct == null ? null : FACES.reduce((b, f) => (Math.abs(f.pct - pct) < Math.abs(b.pct - pct) ? f : b)));
-const moodFor = (pct) => (pct == null ? "" : pct >= 0.9 ? "😁" : pct >= 0.75 ? "🙂" : pct >= 0.6 ? "😐" : "😟");
-const level = (pct) => (pct == null ? "none" : pct < 0.6 ? "bad" : pct < 0.8 ? "mid" : "good");
+const moodFor = (pct) =>
+  pct == null ? "" : pct >= Math.max(TH.good, 0.9) ? "😁" : pct >= TH.good ? "🙂" : pct >= TH.pass ? "😐" : "😟";
+const level = (pct) => (pct == null ? "none" : pct < TH.pass ? "bad" : pct < TH.good ? "mid" : "good");
 const AV_COLORS = ["#4c6ef5", "#7950f2", "#e64980", "#f76707", "#2f9e44", "#1098ad", "#d6336c", "#5c7cfa", "#ae3ec9", "#0ca678"];
 function avatar(s, size = 32) {
   const name = `${s.first_name} ${s.last_name}`;
@@ -359,14 +422,15 @@ function cellHtml(a, sid, score) {
 function statsHtml(gb, scale) {
   const avgs = gb.rows.map((r) => r.average).filter((v) => v != null);
   const mean = avgs.length ? avgs.reduce((a, b) => a + b, 0) / avgs.length : null;
-  const good = avgs.filter((v) => v / scale >= 0.8).length;
-  const mid = avgs.filter((v) => v / scale >= 0.6 && v / scale < 0.8).length;
-  const bad = avgs.filter((v) => v / scale < 0.6).length;
+  const good = avgs.filter((v) => level(v / scale) === "good").length;
+  const mid = avgs.filter((v) => level(v / scale) === "mid").length;
+  const bad = avgs.filter((v) => level(v / scale) === "bad").length;
+  const FORMULA = { weighted: "ponderada", mean: "media simple", median: "mediana" };
   const pend = gb.rows.length - avgs.length;
   const seg = (n, c) => (n ? `<span class="seg seg-${c}" style="flex:${n}" title="${n}"></span>` : "");
   return `<div class="stats">
     <div class="stat"><div class="stat-icon">${moodFor(mean == null ? null : mean / scale) || "📊"}</div>
-      <div><small>Media del grupo</small><b class="lv-text-${level(mean == null ? null : mean / scale)}">${mean == null ? "—" : mean.toFixed(1)}</b></div></div>
+      <div><small>Media del grupo · ${FORMULA[gb.formula] || "ponderada"}${gb.drop_lowest ? ` · sin ${gb.drop_lowest} peor${gb.drop_lowest > 1 ? "es" : ""}` : ""}</small><b class="lv-text-${level(mean == null ? null : mean / scale)}">${mean == null ? "—" : mean.toFixed(1)}</b></div></div>
     <div class="stat"><div class="stat-icon good">😁</div><div><small>Van muy bien</small><b>${good}</b></div></div>
     <div class="stat"><div class="stat-icon mid">😐</div><div><small>Pueden mejorar</small><b>${mid}</b></div></div>
     <div class="stat"><div class="stat-icon bad">😟</div><div><small>En riesgo</small><b>${bad}</b></div></div>
@@ -376,7 +440,7 @@ function statsHtml(gb, scale) {
 }
 
 // ── Cuaderno de notas
-async function tabGradebook(g, el, term = "") {
+async function tabGradebook(g, el, term = "", view = "actividades") {
   const q = term ? `?term=${encodeURIComponent(term)}` : "";
   const [gb, rubrics, all, att] = await Promise.all([
     api(`/groups/${g.id}/gradebook${q}`),
@@ -384,17 +448,80 @@ async function tabGradebook(g, el, term = "") {
     api(`/groups/${g.id}/assessments`),
     api(`/groups/${g.id}/attendance/summary`),
   ]);
+  if (!el.isConnected) return; // el usuario cambió de pestaña mientras cargaba
+  state.comps = gb.competencies;
   const terms = [...new Set(all.map((a) => a.term).filter(Boolean))];
   const catName = Object.fromEntries(gb.categories.map((c) => [c.id, c.name]));
   const attBy = Object.fromEntries(att.map((r) => [r.student_id, r]));
   const scale = g.grading_scale;
+  const pct = (x) => Math.round(x * 100);
+
+  const actTable = () => `<div class="table-wrap"><table class="grid gb"><thead><tr>
+        <th class="sticky-col">Alumno</th>
+        <th class="num" title="Asistencia">📅</th>
+        ${gb.assessments
+          .map(
+            (a) => `<th class="num"><div class="col-head">
+              <span class="kind-badge">${KIND_INFO[a.kind || "numeric"].icon}</span>
+              <a href="#" data-edit-a="${a.id}" title="Editar">${esc(a.name)}</a>
+              <small class="muted">${a.kind === "numeric" || !a.kind ? `/${a.max_score}` : ""}${a.weight != 1 ? ` ×${a.weight}` : ""}${a.date ? " · " + fmtDate(a.date) : ""}</small>
+              <span class="row" style="gap:3px;justify-content:center">
+                ${a.category_id ? `<span class="chip">${esc(catName[a.category_id])}</span>` : ""}
+                ${a.rubric_id ? `<span class="chip">📐</span>` : ""}
+                ${a.competencies?.length ? `<span class="chip" title="Competencias">🎯 ${a.competencies.length}</span>` : ""}
+                ${a.kind === "numeric" || !a.kind ? `<button class="ghost mini" data-paste="${a.id}" title="Pegar columna desde Excel">📋</button>` : ""}
+              </span></div></th>`,
+          )
+          .join("")}
+        <th class="num">Media</th></tr></thead><tbody>
+        ${gb.rows
+          .map((r) => {
+            const t = attBy[r.student.id];
+            const ap = t?.total ? (t.present + t.late) / t.total : null;
+            return `<tr><td class="sticky-col"><div class="who">${avatar(r.student)}<span>${esc(r.student.last_name)}, ${esc(r.student.first_name)}</span></div></td>
+            <td class="num"><span class="att-dot lv-${level(ap)}" title="${ap == null ? "Sin registros" : pct(ap) + "% asistencia"}">${ap == null ? "·" : pct(ap) + "%"}</span></td>
+            ${gb.assessments
+              .map((a) => {
+                const cm = r.comments?.[a.id];
+                return `<td class="num gcell ${cm ? "has-comment" : ""}" data-ca="${a.id}" data-cs="${r.student.id}" title="${cm ? "💬 " + esc(cm) + "\n" : ""}Clic derecho: comentario">${cellHtml(a, r.student.id, r.scores[a.id])}</td>`;
+              })
+              .join("")}
+            <td class="num" data-avg="${r.student.id}">${avgHtml(r.average, scale)}</td></tr>`;
+          })
+          .join("")}
+      </tbody></table></div>`;
+
+  const compTable = () =>
+    !gb.competencies.length
+      ? `<div class="card empty"><div style="font-size:40px">🎯</div>Aún no hay competencias.<br>Créalas con <b>🎯 Competencias</b> y vincúlalas a las actividades al editarlas.</div>`
+      : `<div class="table-wrap"><table class="grid gb"><thead><tr><th class="sticky-col">Alumno</th>
+        ${gb.competencies
+          .map((k) => {
+            const n = gb.assessments.filter((a) => a.competencies?.includes(k.id)).length;
+            return `<th class="num"><div class="col-head"><b>${esc(k.code || "")}</b><span>${esc(k.name)}</span><small class="muted">${n} actividad${n === 1 ? "" : "es"}</small></div></th>`;
+          })
+          .join("")}<th class="num">Media</th></tr></thead><tbody>
+        ${gb.rows
+          .map(
+            (r) => `<tr><td class="sticky-col"><div class="who">${avatar(r.student)}<span>${esc(r.student.last_name)}, ${esc(r.student.first_name)}</span></div></td>
+            ${gb.competencies
+              .map((k) => {
+                const v = r.by_competency?.[k.id];
+                return `<td class="num">${v == null ? `<span class="avg-pill lv-none">—</span>` : `<span class="avg-pill lv-${level(v / scale)}">${moodFor(v / scale)} ${v}</span>`}</td>`;
+              })
+              .join("")}<td class="num">${avgHtml(r.average, scale)}</td></tr>`,
+          )
+          .join("")}</tbody></table></div>`;
 
   el.innerHTML = `
     <div class="row" style="margin-bottom:12px">
+      <div class="seg-ctl"><button class="${view === "actividades" ? "on" : ""}" data-view="actividades">📝 Actividades</button>
+        <button class="${view === "competencias" ? "on" : ""}" data-view="competencias">🎯 Competencias</button></div>
       <select id="term"><option value="">Todas las evaluaciones</option>${terms
         .map((t) => `<option ${t === term ? "selected" : ""}>${esc(t)}</option>`)
         .join("")}</select>
       <span class="spacer"></span>
+      <button id="comps">🎯 Competencias (${gb.competencies.length})</button>
       <button id="cats">🏷️ Categorías (${gb.categories.length})</button>
       <button id="csv">⬇ CSV</button>
       <button class="primary" id="add-a">＋ Actividad</button>
@@ -406,39 +533,17 @@ async function tabGradebook(g, el, term = "") {
           ? `<div class="card empty"><div style="font-size:40px">📝</div>Crea la primera actividad con <b>＋ Actividad</b>.<br>
              Puedes evaluar con nota, con <b>caritas</b> 😁🙂😐😟 o con ✓/✗.</div>`
           : `<div id="stats">${statsHtml(gb, scale)}</div>
-      <div class="table-wrap"><table class="grid gb"><thead><tr>
-        <th class="sticky-col">Alumno</th>
-        <th class="num" title="Asistencia">📅</th>
-        ${gb.assessments
-          .map(
-            (a) => `<th class="num"><div class="col-head">
-              <span class="kind-badge">${KIND_INFO[a.kind || "numeric"].icon}</span>
-              <a href="#" data-edit-a="${a.id}" title="Editar">${esc(a.name)}</a>
-              <small class="muted">${a.kind === "numeric" || !a.kind ? `/${a.max_score}` : ""}${a.weight != 1 ? ` ×${a.weight}` : ""}${a.date ? " · " + fmtDate(a.date) : ""}</small>
-              ${a.category_id ? `<span class="chip">${esc(catName[a.category_id])}</span>` : ""}
-              ${a.rubric_id ? `<span class="chip">📐 rúbrica</span>` : ""}</div></th>`,
-          )
-          .join("")}
-        <th class="num">Media</th></tr></thead><tbody>
-        ${gb.rows
-          .map((r) => {
-            const t = attBy[r.student.id];
-            const ap = t?.total ? (t.present + t.late) / t.total : null;
-            return `<tr><td class="sticky-col"><div class="who">${avatar(r.student)}<span>${esc(r.student.last_name)}, ${esc(r.student.first_name)}</span></div></td>
-            <td class="num"><span class="att-dot lv-${level(ap)}" title="${ap == null ? "Sin registros" : Math.round(ap * 100) + "% asistencia"}">${ap == null ? "·" : Math.round(ap * 100) + "%"}</span></td>
-            ${gb.assessments.map((a) => `<td class="num">${cellHtml(a, r.student.id, r.scores[a.id])}</td>`).join("")}
-            <td class="num" data-avg="${r.student.id}">${avgHtml(r.average, scale)}</td></tr>`;
-          })
-          .join("")}
-      </tbody></table></div>
-      <div class="legend"><span><i class="sw good"></i>≥ 80 %</span><span><i class="sw mid"></i>60–79 %</span><span><i class="sw bad"></i>&lt; 60 %</span>
-        <span>😁 Feliz · 🙂 Sonriente · 😐 Seria · 😟 Triste</span><span class="muted">Se guarda automáticamente · escala 0–${scale}</span></div>`
+      ${view === "competencias" ? compTable() : actTable()}
+      <div class="legend"><span><i class="sw good"></i>≥ ${+(TH.good * scale).toFixed(2)}</span><span><i class="sw mid"></i>${+(TH.pass * scale).toFixed(2)}–${+(TH.good * scale).toFixed(2)}</span><span><i class="sw bad"></i>&lt; ${+(TH.pass * scale).toFixed(2)}</span>
+        <span>😁 Feliz · 🙂 Sonriente · 😐 Seria · 😟 Triste</span><span>💬 clic derecho = comentario · 📋 pegar desde Excel</span><span class="muted">Colores y fórmula en ⚙️ Ajustes</span></div>`
     }`;
 
-  const reload = () => tabGradebook(g, el, term);
-  $("#term").onchange = (e) => tabGradebook(g, el, e.target.value);
+  const reload = () => tabGradebook(g, el, term, view);
+  $$("[data-view]", el).forEach((b) => (b.onclick = () => tabGradebook(g, el, term, b.dataset.view)));
+  $("#term").onchange = (e) => tabGradebook(g, el, e.target.value, view);
   $("#add-a").onclick = () => assessmentDialog(g, gb.categories, rubrics, null, reload);
   $("#cats").onclick = () => categoriesDialog(g, gb.categories, reload);
+  $("#comps").onclick = () => competenciesDialog(g, gb.competencies, reload);
   $("#csv").onclick = async () => {
     const res = await fetch(`/groups/${g.id}/gradebook.csv${q}`, { headers: { Authorization: `Bearer ${state.token}` } });
     const url = URL.createObjectURL(await res.blob());
@@ -452,7 +557,39 @@ async function tabGradebook(g, el, term = "") {
         assessmentDialog(g, gb.categories, rubrics, gb.assessments.find((x) => x.id === a.dataset.editA), reload);
       }),
   );
+  $$("[data-paste]", el).forEach((b) => (b.onclick = () => pasteDialog(gb.assessments.find((a) => a.id === b.dataset.paste), gb.rows, reload)));
   const byId = Object.fromEntries(gb.assessments.map((a) => [a.id, a]));
+
+  // Comentario por nota: clic derecho (o mantener pulsado en móvil)
+  const openComment = async (td) => {
+    const a = byId[td.dataset.ca];
+    const r = gb.rows.find((x) => x.student.id === td.dataset.cs);
+    const cur = r.comments?.[a.id] || "";
+    const v = await modal(
+      `💬 ${r.student.first_name} — ${a.name}`,
+      `<textarea name="comment" rows="4" placeholder="Anotación sobre esta nota (solo la ves tú)">${esc(cur)}</textarea>`,
+    );
+    if (!v) return;
+    try {
+      await api(`/assessments/${a.id}/grades`, { method: "PUT", body: [{ student_id: r.student.id, comment: v.comment.trim() }] });
+      r.comments = { ...(r.comments || {}), [a.id]: v.comment.trim() };
+      td.classList.toggle("has-comment", !!v.comment.trim());
+      td.title = (v.comment.trim() ? "💬 " + v.comment.trim() + "\n" : "") + "Clic derecho: comentario";
+      toast("Comentario guardado");
+    } catch (e) {
+      fail(e);
+    }
+  };
+  $$("td.gcell", el).forEach((td) => {
+    td.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      openComment(td);
+    });
+    let t;
+    td.addEventListener("touchstart", () => (t = setTimeout(() => openComment(td), 650)), { passive: true });
+    td.addEventListener("touchend", () => clearTimeout(t));
+    td.addEventListener("touchmove", () => clearTimeout(t), { passive: true });
+  });
 
   /** Guarda una nota y repinta la celda + medias */
   async function save(aid, sid, score, td) {
@@ -504,11 +641,133 @@ async function tabGradebook(g, el, term = "") {
         }),
     );
     $$("[data-face]", scope).forEach((b) => (b.onclick = (e) => facePicker(e.currentTarget, byId[b.dataset.face], save)));
-    $$("[data-rub]", scope).forEach(
-      (b) => (b.onclick = () => rubricScoreDialog(byId[b.dataset.rub], b.dataset.s, rubrics, reload)),
-    );
+    $$("[data-rub]", scope).forEach((b) => (b.onclick = () => rubricScoreDialog(byId[b.dataset.rub], b.dataset.s, rubrics, reload)));
   }
   bindCell(el);
+}
+
+/** Pegar una columna de notas copiada de Excel / Hojas de cálculo */
+async function pasteDialog(a, rows, done) {
+  const norm = (s) =>
+    String(s)
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9 ]/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  const v = await modal(
+    `📋 Pegar notas — ${a.name}`,
+    `<p class="muted">Copia en Excel la columna de notas y pégala aquí.</p>
+     <ul class="muted small" style="margin:0;padding-left:18px">
+       <li><b>Solo números</b>: se asignan en el orden de la lista (${rows.length} alumnos, por apellido).</li>
+       <li><b>Nombre ⇥ nota</b> (dos columnas): se busca a cada alumno por su nombre.</li>
+       <li>Celdas vacías se ignoran. Se aceptan comas decimales (8,5).</li>
+     </ul>
+     <textarea name="data" rows="10" required placeholder="8,5&#10;7&#10;9,2&#10;…"></textarea>`,
+    { submit: "Previsualizar" },
+  );
+  if (!v) return;
+  const lines = v.data.replace(/\r/g, "").split("\n");
+  while (lines.length && !lines.at(-1).trim()) lines.pop();
+  const num = (s) => {
+    const t = String(s).trim().replace(",", ".");
+    return t === "" ? undefined : Number(t);
+  };
+  const out = [];
+  const errors = [];
+  const named = lines.some((l) => l.includes("\t") && isNaN(num(l.split("\t")[0]) ?? NaN));
+  lines.forEach((l, i) => {
+    if (named) {
+      const cols = l.split("\t");
+      const score = num(cols.at(-1));
+      if (score === undefined) return;
+      const name = norm(cols.slice(0, -1).join(" "));
+      const r = rows.find((x) => {
+        const full = norm(`${x.student.last_name} ${x.student.first_name}`), inv = norm(`${x.student.first_name} ${x.student.last_name}`);
+        return full === name || inv === name || full.startsWith(name) || inv.startsWith(name);
+      });
+      if (!r) return errors.push(`Línea ${i + 1}: no encuentro a «${cols.slice(0, -1).join(" ")}»`);
+      out.push({ r, score });
+    } else {
+      const score = num(l.split("\t")[0]);
+      if (score === undefined) return;
+      if (!rows[i]) return errors.push(`Línea ${i + 1}: hay más notas que alumnos`);
+      out.push({ r: rows[i], score });
+    }
+  });
+  out.forEach(({ r, score }) => {
+    if (isNaN(score) || score < 0 || score > a.max_score) errors.push(`${r.student.first_name} ${r.student.last_name}: «${score}» fuera de 0–${a.max_score}`);
+  });
+  const okRows = out.filter(({ score }) => !isNaN(score) && score >= 0 && score <= a.max_score);
+  const confirmV = await modal(
+    "Confirmar notas pegadas",
+    `${errors.length ? `<div class="ai-box" style="background:var(--bad-bg)">⚠️ ${errors.map(esc).join("<br>")}</div>` : ""}
+     <div class="table-wrap"><table><thead><tr><th>Alumno</th><th class="num">Nota</th></tr></thead><tbody>
+     ${okRows.map(({ r, score }) => `<tr><td>${esc(r.student.last_name)}, ${esc(r.student.first_name)}</td><td class="num"><span class="avg-pill lv-${level(score / a.max_score)}">${score}</span></td></tr>`).join("")}
+     </tbody></table></div>`,
+    { submit: `Guardar ${okRows.length} notas` },
+  );
+  if (!confirmV || !okRows.length) return;
+  try {
+    await api(`/assessments/${a.id}/grades`, { method: "PUT", body: okRows.map(({ r, score }) => ({ student_id: r.student.id, score })) });
+    toast(`${okRows.length} notas guardadas`);
+    done();
+  } catch (e) {
+    fail(e);
+  }
+}
+
+/** Gestión de competencias del grupo */
+async function competenciesDialog(g, comps, done) {
+  const p = modal(
+    "🎯 Competencias del grupo",
+    `<p class="muted">Define las competencias y luego vincúlalas a cada actividad (⚙ al editar la actividad). El cuaderno calculará la media por competencia.</p>
+     <div class="list" id="comp-list">${
+       comps
+         .map(
+           (k) => `<div class="list-item"><span class="chip">${esc(k.code || "—")}</span><div style="flex:1">${esc(k.name)}</div>
+             <button type="button" class="danger ghost" data-delcomp="${k.id}">✕</button></div>`,
+         )
+         .join("") || `<p class="muted">Sin competencias todavía.</p>`
+     }</div>
+     <div class="row"><input name="code" placeholder="Código (CE1)" style="width:110px"><input name="cname" placeholder="Nombre de la competencia" style="flex:1">
+       <button type="button" id="add-comp">Añadir</button></div>
+     <details><summary class="muted">Pegar varias (una por línea: «código ⇥ nombre» o solo nombre)</summary>
+       <textarea name="bulk" rows="5"></textarea><button type="button" id="bulk-comp">Añadir todas</button></details>`,
+    { submit: "" },
+  );
+  const dlg = $$("dialog").at(-1);
+  const add = async (list) => {
+    try {
+      await api(`/groups/${g.id}/competencies`, { method: "POST", body: list });
+      dlg.close();
+      toast("Competencias guardadas");
+    } catch (e) {
+      fail(e);
+    }
+  };
+  $("#add-comp", dlg).onclick = () => {
+    const name = $("[name=cname]", dlg).value.trim();
+    if (name) add({ code: $("[name=code]", dlg).value.trim() || null, name });
+  };
+  $("#bulk-comp", dlg).onclick = () => {
+    const list = $("[name=bulk]", dlg)
+      .value.split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => (l.includes("\t") ? { code: l.split("\t")[0].trim(), name: l.split("\t").slice(1).join(" ").trim() } : { name: l }));
+    if (list.length) add(list);
+  };
+  $$("[data-delcomp]", dlg).forEach(
+    (b) =>
+      (b.onclick = async () => {
+        if (!confirm("¿Eliminar esta competencia? Se desvinculará de las actividades.")) return;
+        await api(`/competencies/${b.dataset.delcomp}`, { method: "DELETE" }).then(() => b.closest(".list-item").remove(), fail);
+      }),
+  );
+  await p;
+  done();
 }
 
 function avgHtml(v, scale) {
@@ -576,10 +835,19 @@ async function assessmentDialog(g, cats, rubrics, a, done) {
       <label>Rúbrica<select name="rubric_id"><option value="">— Ninguna —</option>
         ${rubrics.map((r) => `<option value="${r.id}" ${a?.rubric_id === r.id ? "selected" : ""}>${esc(r.title)}</option>`).join("")}</select></label>
     </div>
+    ${
+      (state.comps || []).length
+        ? `<label>🎯 Competencias que evalúa</label><div class="comp-picker">${state.comps
+            .map((k) => `<label class="comp-opt"><input type="checkbox" name="comp" value="${k.id}" ${a?.competencies?.includes(k.id) ? "checked" : ""}><span>${esc(k.code ? k.code + " · " : "")}${esc(k.name)}</span></label>`)
+            .join("")}</div>`
+        : ""
+    }
     ${a ? `<button type="button" class="danger" data-del-a="${a.id}">Eliminar actividad y sus notas</button>` : ""}`,
   );
   if (!v) return;
-  const body = { ...v, kind: v.kind || "numeric", max_score: Number(v.max_score), weight: Number(v.weight), category_id: v.category_id || null, rubric_id: v.rubric_id || null, date: v.date || null, term: v.term || null };
+  const competencies = v.__fd.getAll("comp");
+  delete v.comp;
+  const body = { ...v, competencies, kind: v.kind || "numeric", max_score: Number(v.max_score), weight: Number(v.weight), category_id: v.category_id || null, rubric_id: v.rubric_id || null, date: v.date || null, term: v.term || null };
   try {
     await api(a ? `/assessments/${a.id}` : `/groups/${g.id}/assessments`, { method: a ? "PATCH" : "POST", body });
     toast("Actividad guardada");
@@ -1013,6 +1281,800 @@ async function tabSessions(g, el) {
         await api(`/sessions/${b.dataset.delSes}`, { method: "DELETE" }).then(reload, fail);
       }),
   );
+}
+
+// ───────── Utilidades compartidas ─────────
+const shuffle = (arr) => {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
+const copyText = (t, msg = "Enlace copiado") => navigator.clipboard.writeText(t).then(() => toast(msg), () => prompt("Copia el enlace:", t));
+const publicUrl = (kind, token) => `${location.origin}/#/${kind}/${token}`;
+
+/** Guarda ajustes del grupo (se fusionan en el servidor) y actualiza la copia local */
+async function saveSettings(g, partial) {
+  const r = await api(`/groups/${g.id}`, { method: "PATCH", body: { settings: partial } });
+  g.settings = r.settings;
+  return r;
+}
+
+// ───────── Plano de clase ─────────
+async function tabSeating(g, el) {
+  const [students, gb, att] = await Promise.all([
+    api(`/groups/${g.id}/students`),
+    api(`/groups/${g.id}/gradebook`),
+    api(`/groups/${g.id}/attendance?from=${today()}&to=${today()}`),
+  ]);
+  const avg = Object.fromEntries(gb.rows.map((r) => [r.student.id, r.average]));
+  const attToday = Object.fromEntries(att.map((r) => [r.student_id, r.status]));
+  const byId = Object.fromEntries(students.map((s) => [s.id, s]));
+  const plan = { rows: 4, cols: 6, seats: {}, ...(g.settings?.seating || {}) };
+  // Limpia asientos de alumnos que ya no existen o fuera de la cuadrícula
+  for (const [sid, pos] of Object.entries(plan.seats)) {
+    const [r, c] = pos.split("-").map(Number);
+    if (!byId[sid] || r >= plan.rows || c >= plan.cols) delete plan.seats[sid];
+  }
+  let edit = !Object.keys(plan.seats).length;
+  let selected = null;
+  let saveT;
+  const persist = () => {
+    clearTimeout(saveT);
+    saveT = setTimeout(() => saveSettings(g, { seating: plan }).catch(fail), 400);
+  };
+  const at = () => Object.fromEntries(Object.entries(plan.seats).map(([sid, p]) => [p, sid]));
+  const place = (sid, pos) => {
+    const occ = at();
+    const prev = plan.seats[sid];
+    if (occ[pos] && occ[pos] !== sid) {
+      if (prev) plan.seats[occ[pos]] = prev; // intercambio
+      else delete plan.seats[occ[pos]];
+    }
+    plan.seats[sid] = pos;
+    persist();
+  };
+
+  const seatHtml = (sid) => {
+    const s = byId[sid];
+    const a = avg[sid];
+    const st = attToday[sid];
+    return `<div class="seat-student ${selected === sid ? "sel" : ""} ${st ? "att-" + ATT[st].cls : ""}" draggable="${edit}" data-sid="${sid}">
+      ${avatar(s, 38)}<span class="seat-name">${shortName(s)}</span>
+      <span class="seat-meta">${st ? ATT[st].icon : ""}${a != null ? `<span class="lv-text-${level(a / g.grading_scale)}">${moodFor(a / g.grading_scale)}</span>` : ""}</span>
+    </div>`;
+  };
+
+  const render = () => {
+    const occ = at();
+    const bench = students.filter((s) => !plan.seats[s.id]);
+    el.innerHTML = `
+      <div class="row" style="margin-bottom:12px">
+        <div class="seg-ctl"><button class="${!edit ? "on" : ""}" data-mode="class">🏫 Modo clase</button><button class="${edit ? "on" : ""}" data-mode="edit">✏️ Organizar</button></div>
+        ${
+          edit
+            ? `<label class="row" style="gap:4px">Filas <input type="number" id="rows" min="1" max="12" value="${plan.rows}" style="width:60px"></label>
+               <label class="row" style="gap:4px">Columnas <input type="number" id="cols" min="1" max="12" value="${plan.cols}" style="width:60px"></label>
+               <button id="shuffle">🔀 Aleatorio</button><button id="alpha">🔤 Alfabético</button><button id="clear" class="danger">🧹 Vaciar</button>`
+            : `<span class="muted">Toca un alumno para pasar lista o anotar 👍/👎. Hoy: ${Object.keys(attToday).length}/${students.length} con asistencia.</span>`
+        }
+      </div>
+      <div class="classroom">
+        <div class="desk">🧑‍🏫 Mesa del docente · pizarrón</div>
+        <div class="seat-grid" style="grid-template-columns:repeat(${plan.cols}, minmax(84px, 1fr))">
+          ${Array.from({ length: plan.rows * plan.cols }, (_, i) => {
+            const pos = `${Math.floor(i / plan.cols)}-${i % plan.cols}`;
+            return `<div class="seat ${occ[pos] ? "taken" : ""}" data-pos="${pos}">${occ[pos] ? seatHtml(occ[pos]) : edit ? `<span class="muted">·</span>` : ""}</div>`;
+          }).join("")}
+        </div>
+      </div>
+      ${
+        edit
+          ? `<div class="bench" data-pos="bench"><b>Sin asiento (${bench.length})</b> <span class="muted small">Arrastra al plano, o toca un alumno y luego un asiento.</span>
+             <div class="bench-list">${bench.map((s) => seatHtml(s.id)).join("") || `<span class="muted">Todos sentados ✔</span>`}</div></div>`
+          : bench.length
+            ? `<p class="muted">${bench.length} alumno(s) sin asiento. Pulsa ✏️ Organizar para colocarlos.</p>`
+            : ""
+      }
+      <div class="legend"><span>${ATT.present.icon} Presente</span><span>${ATT.absent.icon} Falta</span><span>${ATT.late.icon} Retraso</span><span>😁🙂😐😟 media actual</span></div>`;
+    bind();
+  };
+
+  const bind = () => {
+    $$("[data-mode]", el).forEach((b) => (b.onclick = () => ((edit = b.dataset.mode === "edit"), (selected = null), render())));
+    if (edit) {
+      $("#rows").onchange = (e) => ((plan.rows = Math.min(12, Math.max(1, +e.target.value || 1))), cleanup(), persist(), render());
+      $("#cols").onchange = (e) => ((plan.cols = Math.min(12, Math.max(1, +e.target.value || 1))), cleanup(), persist(), render());
+      $("#shuffle").onclick = () => fill(shuffle(students));
+      $("#alpha").onclick = () => fill(students);
+      $("#clear").onclick = () => ((plan.seats = {}), persist(), render());
+      $$(".seat-student", el).forEach((d) => {
+        d.ondragstart = (e) => e.dataTransfer.setData("text/plain", d.dataset.sid);
+        d.onclick = (e) => {
+          e.stopPropagation();
+          selected = selected === d.dataset.sid ? null : d.dataset.sid;
+          render();
+        };
+      });
+      $$(".seat, .bench", el).forEach((z) => {
+        z.ondragover = (e) => (e.preventDefault(), z.classList.add("over"));
+        z.ondragleave = () => z.classList.remove("over");
+        z.ondrop = (e) => {
+          e.preventDefault();
+          const sid = e.dataTransfer.getData("text/plain");
+          if (!sid) return;
+          if (z.dataset.pos === "bench") delete plan.seats[sid], persist();
+          else place(sid, z.dataset.pos);
+          render();
+        };
+        z.onclick = () => {
+          if (!selected) return;
+          if (z.dataset.pos === "bench") delete plan.seats[selected], persist();
+          else if (at()[z.dataset.pos] !== selected) place(selected, z.dataset.pos);
+          selected = null;
+          render();
+        };
+      });
+    } else {
+      $$(".seat-student", el).forEach((d) => (d.onclick = (e) => seatMenu(e.currentTarget, byId[d.dataset.sid])));
+    }
+  };
+  const cleanup = () => {
+    for (const [sid, pos] of Object.entries(plan.seats)) {
+      const [r, c] = pos.split("-").map(Number);
+      if (r >= plan.rows || c >= plan.cols) delete plan.seats[sid];
+    }
+  };
+  const fill = (list) => {
+    plan.seats = {};
+    list.slice(0, plan.rows * plan.cols).forEach((s, i) => (plan.seats[s.id] = `${Math.floor(i / plan.cols)}-${i % plan.cols}`));
+    if (list.length > plan.rows * plan.cols) toast(`Faltan asientos: amplía filas o columnas (${list.length} alumnos)`, true);
+    persist();
+    render();
+  };
+
+  /** Menú rápido en modo clase: asistencia y observaciones */
+  function seatMenu(node, s) {
+    $(".face-pop")?.remove();
+    const pop = document.createElement("div");
+    pop.className = "face-pop seat-pop";
+    pop.innerHTML = `<div class="seat-pop-title">${avatar(s, 26)} <b>${esc(s.first_name)} ${esc(s.last_name)}</b></div>
+      <div class="row" style="gap:4px">${Object.entries(ATT)
+        .map(([k, v]) => `<button data-att="${k}" class="${attToday[s.id] === k ? "on" : ""}" title="${v.label}"><span>${v.icon}</span><small>${v.label}</small></button>`)
+        .join("")}</div>
+      <div class="row" style="gap:4px">
+        <button data-obs="positive"><span>👍</span><small>Positivo</small></button>
+        <button data-obs="negative"><span>👎</span><small>A mejorar</small></button>
+        <button data-sheet><span>📇</span><small>Ficha</small></button></div>`;
+    document.body.append(pop);
+    const r = node.getBoundingClientRect();
+    pop.style.left = `${Math.max(8, Math.min(window.innerWidth - pop.offsetWidth - 8, r.left + r.width / 2 - pop.offsetWidth / 2))}px`;
+    pop.style.top = `${r.bottom + window.scrollY + 6}px`;
+    pop.onclick = async (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      pop.remove();
+      try {
+        if (b.dataset.att) {
+          await api(`/groups/${g.id}/attendance`, { method: "PUT", body: { date: today(), records: [{ student_id: s.id, status: b.dataset.att }] } });
+          attToday[s.id] = b.dataset.att;
+          toast(`${s.first_name}: ${ATT[b.dataset.att].label}`);
+          render();
+        } else if (b.dataset.obs) {
+          const text = prompt(b.dataset.obs === "positive" ? "👍 ¿Qué hizo bien?" : "👎 ¿Qué debe mejorar?", b.dataset.obs === "positive" ? "Buena participación" : "Llamada de atención");
+          if (text == null) return;
+          await api(`/students/${s.id}/observations`, { method: "POST", body: { text: text || "—", kind: b.dataset.obs, date: today() } });
+          toast("Observación guardada");
+        } else studentSheet(g, s);
+      } catch (err) {
+        fail(err);
+      }
+    };
+    setTimeout(() => document.addEventListener("click", function off(e) {
+      if (!pop.contains(e.target)) {
+        pop.remove();
+        document.removeEventListener("click", off);
+      }
+    }), 0);
+  }
+  render();
+}
+
+// ───────── Magic box ─────────
+async function magicBox(g, start = "random") {
+  const students = await api(`/groups/${g.id}/students`);
+  const att = await api(`/groups/${g.id}/attendance?from=${today()}&to=${today()}`).catch(() => []);
+  const absent = new Set(att.filter((r) => r.status === "absent").map((r) => r.student_id));
+  const TOOLS = { random: "🎲 Alumno aleatorio", teams: "👥 Equipos", timer: "⏱️ Temporizador", noise: "🔊 Ruido" };
+  const p = modal(
+    "🪄 Magic box",
+    `<div class="seg-ctl magic-tabs">${Object.entries(TOOLS).map(([k, v]) => `<button type="button" data-tool="${k}">${v}</button>`).join("")}</div>
+     <div id="tool" class="tool-area"></div>`,
+    { submit: "", wide: true },
+  );
+  const dlg = $$("dialog").at(-1);
+  const area = $("#tool", dlg);
+  let cleanup = () => {};
+  const usedKey = `rand-used-${g.id}`;
+
+  const tools = {
+    random() {
+      const used = new Set(JSON.parse(sessionStorage.getItem(usedKey) || "[]"));
+      area.innerHTML = `
+        <div class="rand-stage" id="stage"><div class="rand-face">🎲</div><div class="rand-name">¿A quién le toca?</div></div>
+        <div class="row" style="justify-content:center">
+          <button type="button" class="primary big" id="spin">🎲 Elegir alumno</button></div>
+        <div class="row" style="justify-content:center">
+          <label class="row" style="gap:4px;color:inherit"><input type="checkbox" id="norep" checked> Sin repetir</label>
+          <label class="row" style="gap:4px;color:inherit"><input type="checkbox" id="noabs" checked> Excluir faltas de hoy (${absent.size})</label>
+          <span class="muted small" id="left"></span><button type="button" class="ghost" id="reset">↺ Reiniciar</button></div>`;
+      const pool = () =>
+        students.filter((s) => (!$("#noabs", area).checked || !absent.has(s.id)) && (!$("#norep", area).checked || !used.has(s.id)));
+      const upd = () => ($("#left", area).textContent = `${pool().length} disponibles`);
+      upd();
+      $("#norep", area).onchange = $("#noabs", area).onchange = upd;
+      $("#reset", area).onclick = () => (used.clear(), sessionStorage.removeItem(usedKey), upd(), toast("Lista reiniciada"));
+      $("#spin", area).onclick = () => {
+        const list = pool();
+        if (!list.length) return toast("Ya salieron todos. Pulsa ↺ Reiniciar.", true);
+        const pick = list[Math.floor(Math.random() * list.length)];
+        const stage = $("#stage", area);
+        let n = 0;
+        const steps = 18;
+        const tick = () => {
+          const s = n < steps ? list[Math.floor(Math.random() * list.length)] : pick;
+          stage.innerHTML = `<div class="rand-face">${avatar(s, 96)}</div><div class="rand-name ${n >= steps ? "win" : ""}">${esc(s.first_name)} ${esc(s.last_name)}</div>`;
+          if (n++ < steps) setTimeout(tick, 40 + n * 9);
+          else {
+            used.add(pick.id);
+            sessionStorage.setItem(usedKey, JSON.stringify([...used]));
+            stage.insertAdjacentHTML("beforeend", `<div class="confetti">🎉</div>`);
+            upd();
+          }
+        };
+        tick();
+      };
+    },
+    teams() {
+      area.innerHTML = `
+        <div class="row" style="justify-content:center">
+          <select id="mode"><option value="size">Alumnos por equipo</option><option value="count">Número de equipos</option></select>
+          <input type="number" id="n" min="2" max="20" value="4" style="width:70px">
+          <label class="row" style="gap:4px;color:inherit"><input type="checkbox" id="noabs2" checked> Excluir faltas de hoy</label>
+          <button type="button" class="primary" id="make">🔀 Formar equipos</button>
+          <button type="button" id="copyteams">📋 Copiar</button></div>
+        <div class="teams" id="teams"></div>`;
+      let last = [];
+      $("#make", area).onclick = () => {
+        const list = shuffle(students.filter((s) => !$("#noabs2", area).checked || !absent.has(s.id)));
+        const n = Math.max(1, +$("#n", area).value || 2);
+        const count = $("#mode", area).value === "size" ? Math.max(1, Math.round(list.length / n)) : Math.min(n, list.length);
+        last = Array.from({ length: count }, () => []);
+        list.forEach((s, i) => last[i % count].push(s));
+        $("#teams", area).innerHTML = last
+          .map(
+            (t, i) => `<div class="team" style="--tc:${AV_COLORS[i % AV_COLORS.length]}"><b>Equipo ${i + 1}</b>
+              ${t.map((s) => `<div class="who">${avatar(s, 26)}<span>${shortName(s)}</span></div>`).join("")}</div>`,
+          )
+          .join("");
+      };
+      $("#copyteams", area).onclick = () =>
+        last.length
+          ? copyText(last.map((t, i) => `Equipo ${i + 1}: ${t.map((s) => `${s.first_name} ${s.last_name}`).join(", ")}`).join("\n"), "Equipos copiados")
+          : toast("Forma los equipos primero", true);
+      $("#make", area).click();
+    },
+    timer() {
+      let total = 300, left = 300, run = null;
+      area.innerHTML = `
+        <div class="timer" id="clock">05:00</div>
+        <div class="timer-bar"><span id="tbar"></span></div>
+        <div class="row" style="justify-content:center">${[1, 3, 5, 10, 15]
+          .map((m) => `<button type="button" data-min="${m}">${m} min</button>`)
+          .join("")}<input type="number" id="custom" min="1" max="180" placeholder="min" style="width:70px"></div>
+        <div class="row" style="justify-content:center">
+          <button type="button" class="primary big" id="go">▶ Iniciar</button><button type="button" class="big" id="rst">↺</button>
+          <button type="button" class="big" id="fs" title="Pantalla completa">⛶</button></div>`;
+      const draw = () => {
+        const m = Math.floor(left / 60), s = left % 60;
+        $("#clock", area).textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+        $("#clock", area).className = `timer ${left <= 10 && left > 0 ? "warn" : ""} ${left === 0 ? "done" : ""}`;
+        $("#tbar", area).style.width = `${(left / total) * 100}%`;
+      };
+      const beep = () => {
+        try {
+          const ac = new AudioContext();
+          [0, 0.35, 0.7].forEach((t) => {
+            const o = ac.createOscillator(), gn = ac.createGain();
+            o.frequency.value = 880;
+            o.connect(gn).connect(ac.destination);
+            gn.gain.setValueAtTime(0.3, ac.currentTime + t);
+            gn.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + t + 0.3);
+            o.start(ac.currentTime + t);
+            o.stop(ac.currentTime + t + 0.3);
+          });
+        } catch {}
+      };
+      const stop = () => (clearInterval(run), (run = null), ($("#go", area).textContent = "▶ Iniciar"));
+      const set = (sec) => (stop(), (total = left = sec), draw());
+      $$("[data-min]", area).forEach((b) => (b.onclick = () => set(+b.dataset.min * 60)));
+      $("#custom", area).onchange = (e) => +e.target.value > 0 && set(Math.round(+e.target.value * 60));
+      $("#rst", area).onclick = () => set(total);
+      $("#fs", area).onclick = () => (document.fullscreenElement ? document.exitFullscreen() : area.requestFullscreen?.());
+      $("#go", area).onclick = () => {
+        if (run) return stop();
+        if (left === 0) left = total;
+        $("#go", area).textContent = "⏸ Pausa";
+        run = setInterval(() => {
+          left = Math.max(0, left - 1);
+          draw();
+          if (!left) (stop(), beep());
+        }, 1000);
+      };
+      draw();
+      cleanup = () => clearInterval(run);
+    },
+    noise() {
+      area.innerHTML = `
+        <div class="noise-face" id="nface">🤫</div>
+        <div class="noise-meter"><span id="nbar"></span><i id="nth"></i></div>
+        <div class="row" style="justify-content:center">
+          <label class="row" style="gap:6px;color:inherit">Tolerancia <input type="range" id="th" min="10" max="90" value="55"></label>
+          <button type="button" class="primary" id="mic">🎤 Activar micrófono</button></div>
+        <p class="muted small" style="text-align:center">El audio se analiza solo en este navegador; no se graba ni se envía.</p>`;
+      let stream, ac, raf;
+      const th = () => +$("#th", area).value;
+      $("#nth", area).style.left = th() + "%";
+      $("#th", area).oninput = () => ($("#nth", area).style.left = th() + "%");
+      $("#mic", area).onclick = async () => {
+        if (stream) return;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch {
+          return toast("No se pudo acceder al micrófono", true);
+        }
+        $("#mic", area).textContent = "🎤 Escuchando…";
+        ac = new AudioContext();
+        const an = ac.createAnalyser();
+        an.fftSize = 512;
+        ac.createMediaStreamSource(stream).connect(an);
+        const buf = new Uint8Array(an.fftSize);
+        let smooth = 0;
+        const loop = () => {
+          an.getByteTimeDomainData(buf);
+          let sum = 0;
+          for (const v of buf) sum += ((v - 128) / 128) ** 2;
+          const lvl = Math.min(100, Math.sqrt(sum / buf.length) * 400);
+          smooth = smooth * 0.85 + lvl * 0.15;
+          const bar = $("#nbar", area);
+          if (!bar) return;
+          bar.style.width = smooth + "%";
+          const t = th();
+          bar.className = smooth > t ? "bad" : smooth > t * 0.7 ? "mid" : "good";
+          $("#nface", area).textContent = smooth > t ? "😠" : smooth > t * 0.7 ? "😐" : "😊";
+          raf = requestAnimationFrame(loop);
+        };
+        loop();
+      };
+      cleanup = () => {
+        cancelAnimationFrame(raf);
+        stream?.getTracks().forEach((t) => t.stop());
+        ac?.close();
+      };
+    },
+  };
+  const open = (k) => {
+    cleanup();
+    cleanup = () => {};
+    $$("[data-tool]", dlg).forEach((b) => b.classList.toggle("on", b.dataset.tool === k));
+    tools[k]();
+  };
+  $$("[data-tool]", dlg).forEach((b) => (b.onclick = () => open(b.dataset.tool)));
+  open(start);
+  await p;
+  cleanup();
+}
+
+// ───────── Quizzes ─────────
+/** Formato de texto: pregunta en una línea, opciones debajo, la correcta con * al inicio; línea en blanco entre preguntas */
+const quizToText = (qs) => qs.map((q) => [q.q, ...q.options.map((o, i) => (i === q.answer ? "*" : "") + o)].join("\n")).join("\n\n");
+function textToQuiz(t) {
+  const blocks = t.replace(/\r/g, "").split(/\n\s*\n/).map((b) => b.split("\n").map((l) => l.trim()).filter(Boolean)).filter((b) => b.length);
+  return blocks.map((b, i) => {
+    const [q, ...opts] = b;
+    const answer = opts.findIndex((o) => o.startsWith("*"));
+    if (opts.length < 2) throw new Error(`Pregunta ${i + 1}: necesita al menos 2 opciones`);
+    if (answer < 0) throw new Error(`Pregunta ${i + 1}: marca la correcta con * al inicio`);
+    return { q: q.replace(/^\d+[.)]\s*/, ""), options: opts.map((o) => o.replace(/^\*\s*/, "").replace(/^[a-dA-D][.)]\s*/, "")), answer };
+  });
+}
+
+async function tabQuizzes(g, el) {
+  const quizzes = await api(`/groups/${g.id}/quizzes`);
+  el.innerHTML = `
+    <div class="row" style="margin-bottom:12px"><span class="muted">Los alumnos responden desde su celular con el enlace, eligiendo su nombre. La nota cae sola en el cuaderno.</span>
+      <span class="spacer"></span><button class="primary" id="new-quiz">＋ Nuevo quiz</button></div>
+    <div class="grid-cards">${
+      quizzes
+        .map(
+          (q) => `<div class="card quiz-card">
+            <div class="row"><h3>❓ ${esc(q.title)}</h3><span class="spacer"></span><span class="chip ${q.open ? "" : "closed"}">${q.open ? "🟢 Abierto" : "🔴 Cerrado"}</span></div>
+            <p class="muted">${q.questions.length} preguntas · ${q.responses} respuestas · ${fmtDate(q.created_at.slice(0, 10))}</p>
+            <div class="row">
+              <button data-link="${q.token}">🔗 Copiar enlace</button>
+              <button data-results="${q.id}">📊 Resultados</button>
+              <button data-edit="${q.id}">✎</button>
+              <button data-toggle="${q.id}">${q.open ? "Cerrar" : "Abrir"}</button>
+              <button class="danger ghost" data-del="${q.id}">✕</button></div></div>`,
+        )
+        .join("") || `<div class="card empty"><div style="font-size:40px">❓</div>Crea tu primer quiz. Puedes escribirlo o generarlo con IA ✨</div>`
+    }</div>`;
+  const reload = () => tabQuizzes(g, el);
+  $("#new-quiz").onclick = () => quizDialog(g, null, reload);
+  $$("[data-link]", el).forEach((b) => (b.onclick = () => copyText(publicUrl("q", b.dataset.link))));
+  $$("[data-edit]", el).forEach((b) => (b.onclick = () => quizDialog(g, quizzes.find((q) => q.id === b.dataset.edit), reload)));
+  $$("[data-results]", el).forEach((b) => (b.onclick = () => quizResults(quizzes.find((q) => q.id === b.dataset.results), reload)));
+  $$("[data-toggle]", el).forEach((b) => {
+    const q = quizzes.find((x) => x.id === b.dataset.toggle);
+    b.onclick = () => api(`/quizzes/${q.id}`, { method: "PATCH", body: { open: !q.open } }).then(reload, fail);
+  });
+  $$("[data-del]", el).forEach(
+    (b) =>
+      (b.onclick = async () => {
+        if (!confirm("¿Eliminar el quiz y sus respuestas? (La actividad del cuaderno con las notas se conserva.)")) return;
+        await api(`/quizzes/${b.dataset.del}`, { method: "DELETE" }).then(reload, fail);
+      }),
+  );
+}
+
+async function quizDialog(g, quiz, done) {
+  const p = modal(
+    quiz ? "Editar quiz" : "Nuevo quiz",
+    `<label>Título<input name="title" required value="${esc(quiz?.title)}" placeholder="Repaso unidad 1"></label>
+     ${
+       quiz
+         ? ""
+         : `<div class="ai-row row"><input id="ai-topic" placeholder="✨ Tema para generar con IA (ej.: Uso básico de ChatGPT)" style="flex:1">
+            <input id="ai-n" type="number" min="1" max="15" value="5" style="width:64px" title="Nº de preguntas">
+            <button type="button" id="ai-gen">✨ Generar</button></div>`
+     }
+     <label>Preguntas <span class="muted">— una por bloque; la correcta con <b>*</b>; deja una línea en blanco entre preguntas</span>
+       <textarea name="text" rows="14" required placeholder="¿Qué significa IA?&#10;*Inteligencia artificial&#10;Internet avanzado&#10;Información automática&#10;&#10;¿Siguiente pregunta?&#10;*Correcta&#10;Incorrecta">${esc(quiz ? quizToText(quiz.questions) : "")}</textarea></label>
+     ${quiz?.responses ? `<p class="muted small">⚠️ Ya hay ${quiz.responses} respuestas: cambiar las preguntas no recalcula las notas ya enviadas.</p>` : ""}`,
+    { submit: quiz ? "Guardar" : "Crear quiz", wide: true },
+  );
+  const dlg = $$("dialog").at(-1);
+  $("#ai-gen", dlg) &&
+    ($("#ai-gen", dlg).onclick = (e) =>
+      busy(e.currentTarget, async () => {
+        const topic = $("#ai-topic", dlg).value.trim();
+        if (!topic) return toast("Escribe un tema", true);
+        const r = await api("/ai/quiz", { method: "POST", body: { topic, count: +$("#ai-n", dlg).value || 5 } });
+        $("[name=text]", dlg).value = quizToText(r.questions);
+        if (!$("[name=title]", dlg).value) $("[name=title]", dlg).value = topic;
+        toast("Revisa las preguntas antes de guardar");
+      }));
+  const v = await p;
+  if (!v) return;
+  let questions;
+  try {
+    questions = textToQuiz(v.text);
+    if (!questions.length) throw new Error("Escribe al menos una pregunta");
+  } catch (e) {
+    return fail(e);
+  }
+  try {
+    await api(quiz ? `/quizzes/${quiz.id}` : `/groups/${g.id}/quizzes`, { method: quiz ? "PATCH" : "POST", body: { title: v.title, questions, date: today() } });
+    toast(quiz ? "Quiz actualizado" : "Quiz creado. Copia el enlace y compártelo con tu grupo 🔗");
+    done();
+  } catch (e) {
+    fail(e);
+  }
+}
+
+async function quizResults(q, done) {
+  const res = await api(`/quizzes/${q.id}/responses`);
+  const perQ = q.questions.map((_, i) => (res.length ? res.filter((r) => r.answers[i] === q.questions[i].answer).length / res.length : null));
+  const avg = res.length ? res.reduce((t, r) => t + r.correct / r.total, 0) / res.length : null;
+  const p = modal(
+    `📊 ${q.title}`,
+    `<div class="stats">
+       <div class="stat"><div class="stat-icon">${avg == null ? "📭" : moodFor(avg)}</div><div><small>Media</small><b>${avg == null ? "—" : (avg * 10).toFixed(1)}</b></div></div>
+       <div class="stat"><div class="stat-icon">👥</div><div><small>Respuestas</small><b>${res.length}</b></div></div>
+       <div class="stat"><div class="stat-icon">🔗</div><div style="min-width:0"><small>Enlace para alumnos</small>
+         <button type="button" id="cp">Copiar</button></div></div></div>
+     <h3>Aciertos por pregunta</h3>
+     <div class="list">${q.questions
+       .map(
+         (x, i) => `<div class="qbar"><span class="muted">${i + 1}.</span> <span style="flex:1">${esc(x.q)}</span>
+           <span class="minibar"><i class="lv-bg-${level(perQ[i])}" style="width:${(perQ[i] ?? 0) * 100}%"></i></span><b>${perQ[i] == null ? "—" : Math.round(perQ[i] * 100) + "%"}</b></div>`,
+       )
+       .join("")}</div>
+     <h3>Alumnos</h3>
+     <div class="table-wrap"><table><thead><tr><th>Alumno</th><th class="num">Aciertos</th><th class="num">Nota</th>${q.questions.map((_, i) => `<th class="num">${i + 1}</th>`).join("")}<th></th></tr></thead><tbody>
+     ${
+       res
+         .map(
+           (r) => `<tr><td>${esc(r.last_name)}, ${esc(r.first_name)}</td><td class="num">${r.correct}/${r.total}</td>
+             <td class="num"><span class="avg-pill lv-${level(r.correct / r.total)}">${moodFor(r.correct / r.total)} ${((r.correct / r.total) * 10).toFixed(1)}</span></td>
+             ${q.questions.map((x, i) => `<td class="num">${r.answers[i] === x.answer ? "✅" : "❌"}</td>`).join("")}
+             <td><button type="button" class="ghost" data-retry="${r.student_id}" title="Permitir repetir">↺</button></td></tr>`,
+         )
+         .join("") || `<tr><td colspan="99" class="muted">Aún nadie ha respondido.</td></tr>`
+     }</tbody></table></div>`,
+    { submit: "", wide: true },
+  );
+  const dlg = $$("dialog").at(-1);
+  $("#cp", dlg).onclick = () => copyText(publicUrl("q", q.token));
+  $$("[data-retry]", dlg).forEach(
+    (b) =>
+      (b.onclick = async () => {
+        if (!confirm("¿Borrar su respuesta para que pueda repetir? Su nota se mantiene hasta que vuelva a enviar.")) return;
+        await api(`/quizzes/${q.id}/responses/${b.dataset.retry}`, { method: "DELETE" }).then(() => b.closest("tr").remove(), fail);
+      }),
+  );
+  await p;
+  done();
+}
+
+// ───────── Autoevaluación y coevaluación ─────────
+async function tabEvals(g, el) {
+  const [evals, rubrics] = await Promise.all([api(`/groups/${g.id}/evals`), api("/rubrics")]);
+  el.innerHTML = `
+    <div class="row" style="margin-bottom:12px"><span class="muted">Comparte el enlace: cada alumno elige su nombre y evalúa con una rúbrica (a sí mismo o a un compañero).</span>
+      <span class="spacer"></span><button class="primary" id="new-ev">＋ Nueva</button></div>
+    <div class="grid-cards">${
+      evals
+        .map(
+          (e) => `<div class="card">
+            <div class="row"><h3>${e.mode === "self" ? "🪞 Autoevaluación" : "🤝 Coevaluación"}</h3><span class="spacer"></span><span class="chip">${e.open ? "🟢 Abierta" : "🔴 Cerrada"}</span></div>
+            <p><b>${esc(e.title)}</b><br><span class="muted">📐 ${esc(e.rubric_title)} · ${e.responses} respuestas</span></p>
+            <div class="row"><button data-link="${e.token}">🔗 Copiar enlace</button><button data-res="${e.id}">📊 Resultados</button>
+              <button data-toggle="${e.id}">${e.open ? "Cerrar" : "Abrir"}</button><button class="danger ghost" data-del="${e.id}">✕</button></div></div>`,
+        )
+        .join("") || `<div class="card empty"><div style="font-size:40px">🪞</div>Crea una autoevaluación o coevaluación a partir de una rúbrica.</div>`
+    }</div>`;
+  const reload = () => tabEvals(g, el);
+  $("#new-ev").onclick = async () => {
+    if (!rubrics.length) return toast("Primero crea una rúbrica en 📐 Rúbricas", true);
+    const v = await modal(
+      "Nueva auto/coevaluación",
+      `<label>Título<input name="title" required placeholder="Exposición del proyecto"></label>
+       <label>Rúbrica<select name="rubric_id">${rubrics.map((r) => `<option value="${r.id}">${esc(r.title)}</option>`).join("")}</select></label>
+       <div class="kind-picker" style="grid-template-columns:1fr 1fr">
+         <label class="kind-opt"><input type="radio" name="mode" value="self" checked><span class="kind-card"><b>🪞</b><span>Autoevaluación</span><small>Cada alumno se evalúa a sí mismo</small></span></label>
+         <label class="kind-opt"><input type="radio" name="mode" value="peer"><span class="kind-card"><b>🤝</b><span>Coevaluación</span><small>Evalúan a sus compañeros</small></span></label></div>`,
+      { submit: "Crear" },
+    );
+    if (!v) return;
+    try {
+      const e = await api(`/groups/${g.id}/evals`, { method: "POST", body: v });
+      copyText(publicUrl("e", e.token), "Creada. Enlace copiado 🔗");
+      reload();
+    } catch (err) {
+      fail(err);
+    }
+  };
+  $$("[data-link]", el).forEach((b) => (b.onclick = () => copyText(publicUrl("e", b.dataset.link))));
+  $$("[data-toggle]", el).forEach((b) => {
+    const e = evals.find((x) => x.id === b.dataset.toggle);
+    b.onclick = () => api(`/evals/${e.id}`, { method: "PATCH", body: { open: !e.open } }).then(reload, fail);
+  });
+  $$("[data-del]", el).forEach(
+    (b) => (b.onclick = async () => confirm("¿Eliminar esta evaluación y sus respuestas?") && api(`/evals/${b.dataset.del}`, { method: "DELETE" }).then(reload, fail)),
+  );
+  $$("[data-res]", el).forEach(
+    (b) =>
+      (b.onclick = async () => {
+        const e = evals.find((x) => x.id === b.dataset.res);
+        const r = await api(`/evals/${e.id}/responses`);
+        const f = (v) => (v == null ? "—" : `<span class="avg-pill lv-${level(v)}">${moodFor(v)} ${(v * 10).toFixed(1)}</span>`);
+        const p = modal(
+          `📊 ${e.title}`,
+          `<div class="table-wrap"><table><thead><tr><th>Alumno evaluado</th><th class="num">🪞 Auto</th><th class="num">🤝 Compañeros</th><th class="num">Diferencia</th><th>Comentarios</th></tr></thead><tbody>
+            ${
+              r.summary
+                .map((s) => {
+                  const d = s.self != null && s.peers_avg != null ? (s.self - s.peers_avg) * 10 : null;
+                  return `<tr><td>${esc(s.name)}</td><td class="num">${f(s.self)}</td><td class="num">${f(s.peers_avg)} <small class="muted">(${s.peers_count})</small></td>
+                    <td class="num">${d == null ? "—" : `${d > 0 ? "+" : ""}${d.toFixed(1)}`}</td><td style="white-space:normal">${s.comments.map(esc).join("<br>")}</td></tr>`;
+                })
+                .join("") || `<tr><td colspan="5" class="muted">Sin respuestas todavía.</td></tr>`
+            }</tbody></table></div>
+           <div class="row"><span class="muted">Pasar al cuaderno como actividad nueva:</span>
+             <select id="src"><option value="mix">Media auto + compañeros</option><option value="self">Solo autoevaluación</option><option value="peers">Solo compañeros</option></select>
+             <button type="button" class="primary" id="togb">📊 Pasar al cuaderno</button></div>`,
+          { submit: "", wide: true },
+        );
+        const dlg = $$("dialog").at(-1);
+        $("#togb", dlg).onclick = (ev) =>
+          busy(ev.currentTarget, async () => {
+            const x = await api(`/evals/${e.id}/to-gradebook`, { method: "POST", body: { source: $("#src", dlg).value, date: today() } });
+            toast(`Actividad creada con ${x.grades} notas`);
+            dlg.close();
+          });
+        await p;
+      }),
+  );
+}
+
+// ───────── Recursos ─────────
+const hostOf = (u) => {
+  try {
+    return new URL(u).hostname;
+  } catch {
+    return "";
+  }
+};
+const RES = {
+  link: { icon: "🔗", label: "Enlace" },
+  video: { icon: "🎬", label: "Video" },
+  doc: { icon: "📄", label: "Documento" },
+  slides: { icon: "📊", label: "Presentación" },
+  image: { icon: "🖼️", label: "Imagen" },
+  other: { icon: "📦", label: "Otro" },
+};
+const guessKind = (url) =>
+  /youtu\.?be|vimeo/i.test(url) ? "video" : /\.(pdf|docx?)($|\?)|docs\.google\.com\/document/i.test(url) ? "doc"
+  : /\.(pptx?)($|\?)|docs\.google\.com\/presentation|canva\.com/i.test(url) ? "slides" : /\.(png|jpe?g|gif|webp)($|\?)/i.test(url) ? "image" : "link";
+
+async function tabResources(g, el) {
+  const list = await api(`/groups/${g.id}/resources`);
+  el.innerHTML = `
+    <div class="row" style="margin-bottom:12px"><span class="muted">Guarda los enlaces de tu curso: manuales, videos, presentaciones, Drive…</span>
+      <span class="spacer"></span><button class="primary" id="add-res">＋ Recurso</button></div>
+    <div class="grid-cards">${
+      list
+        .map(
+          (r) => `<div class="card res-card">
+            <div class="res-icon">${RES[r.kind]?.icon || "🔗"}</div>
+            <div style="flex:1;min-width:0"><b>${esc(r.title)}</b><div class="muted small">${RES[r.kind]?.label || ""}${r.url ? " · " + esc(hostOf(r.url)) : ""}</div>
+              ${r.notes ? `<p class="small" style="margin:6px 0 0">${esc(r.notes)}</p>` : ""}
+              <div class="row" style="margin-top:8px">${r.url ? `<a class="btn-link" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Abrir ↗</a>` : ""}
+                <button class="ghost" data-copy="${esc(r.url || "")}" ${r.url ? "" : "hidden"}>📋</button>
+                <button class="ghost" data-edit="${r.id}">✎</button><button class="ghost danger" data-del="${r.id}">✕</button></div></div></div>`,
+        )
+        .join("") || `<div class="card empty"><div style="font-size:40px">📎</div>Aún no hay recursos.</div>`
+    }</div>`;
+  const reload = () => tabResources(g, el);
+  const dialog = async (r) => {
+    const v = await modal(
+      r ? "Editar recurso" : "Nuevo recurso",
+      `<label>Título<input name="title" required value="${esc(r?.title)}" placeholder="Manual ChatGPT Profesional"></label>
+       <label>Enlace (URL)<input name="url" type="url" value="${esc(r?.url)}" placeholder="https://…"></label>
+       <label>Tipo<select name="kind"><option value="">Detectar automáticamente</option>${Object.entries(RES)
+         .map(([k, x]) => `<option value="${k}" ${r?.kind === k ? "selected" : ""}>${x.icon} ${x.label}</option>`)
+         .join("")}</select></label>
+       <label>Notas<textarea name="notes" rows="3">${esc(r?.notes)}</textarea></label>`,
+    );
+    if (!v) return;
+    v.kind = v.kind || (v.url ? guessKind(v.url) : "other");
+    try {
+      await api(r ? `/resources/${r.id}` : `/groups/${g.id}/resources`, { method: r ? "PATCH" : "POST", body: v });
+      reload();
+    } catch (e) {
+      fail(e);
+    }
+  };
+  $("#add-res").onclick = () => dialog();
+  $$("[data-edit]", el).forEach((b) => (b.onclick = () => dialog(list.find((x) => x.id === b.dataset.edit))));
+  $$("[data-copy]", el).forEach((b) => (b.onclick = () => copyText(b.dataset.copy)));
+  $$("[data-del]", el).forEach((b) => (b.onclick = () => confirm("¿Eliminar este recurso?") && api(`/resources/${b.dataset.del}`, { method: "DELETE" }).then(reload, fail)));
+}
+
+// ───────── Páginas públicas de alumnos ─────────
+function publicShell(inner) {
+  $("#app").innerHTML = `<div class="pub"><div class="pub-card">${inner}</div><p class="muted small" style="text-align:center">📒 Cuaderno</p></div>`;
+}
+const pubErr = (e) => publicShell(`<div class="empty"><div style="font-size:48px">😕</div><h3>${esc(e.message)}</h3><p class="muted">Pide a tu docente un enlace nuevo.</p></div>`);
+
+async function renderPublicQuiz(token) {
+  let d;
+  try {
+    d = await api(`/p/quiz/${token}`);
+  } catch (e) {
+    return pubErr(e);
+  }
+  if (!d.open) return publicShell(`<div class="empty"><div style="font-size:48px">🔒</div><h3>${esc(d.title)}</h3><p>Este cuestionario está cerrado.</p></div>`);
+  const done = new Set(d.done);
+  publicShell(`<div class="pub-head"><small>${esc(d.group)}</small><h2>❓ ${esc(d.title)}</h2><p class="muted">${d.questions.length} preguntas</p></div>
+    <label>¿Quién eres?<select id="who"><option value="">— Elige tu nombre —</option>${d.students
+      .map((s) => `<option value="${s.id}" ${done.has(s.id) ? "disabled" : ""}>${esc(s.last_name)}, ${esc(s.first_name)}${done.has(s.id) ? " ✓ (ya respondió)" : ""}</option>`)
+      .join("")}</select></label>
+    <form id="qf">${d.questions
+      .map(
+        (q, i) => `<fieldset class="pub-q"><legend><span class="qnum">${i + 1}</span> ${esc(q.q)}</legend>
+          ${q.options.map((o, j) => `<label class="pub-opt"><input type="radio" name="q${i}" value="${j}" required><span>${esc(o)}</span></label>`).join("")}</fieldset>`,
+      )
+      .join("")}
+      <button class="primary big" type="submit" style="width:100%">Enviar respuestas</button></form>`);
+  $("#qf").onsubmit = async (e) => {
+    e.preventDefault();
+    const sid = $("#who").value;
+    if (!sid) return toast("Elige tu nombre arriba", true), $("#who").focus();
+    const fd = new FormData(e.target);
+    const answers = d.questions.map((_, i) => Number(fd.get(`q${i}`)));
+    const st = d.students.find((s) => s.id === sid);
+    if (!confirm(`Enviar como ${st.first_name} ${st.last_name}? Solo puedes enviarlo una vez.`)) return;
+    try {
+      const r = await api(`/p/quiz/${token}`, { method: "POST", body: { student_id: sid, answers } });
+      const pct = r.correct / r.total;
+      publicShell(`<div class="pub-result"><div class="big-face">${pct >= 0.9 ? "🏆" : moodFor(pct)}</div>
+        <h2>${r.correct} de ${r.total} correctas</h2><p class="score">Nota: <b>${r.score}</b> / 10</p>
+        <p>${pct >= 0.9 ? "¡Excelente trabajo! 🎉" : pct >= 0.6 ? "¡Bien hecho! Sigue así 💪" : "¡No te rindas! Repasa y lo lograrás 📚"}</p></div>
+        <h3>Revisión</h3>${d.questions
+          .map((q, i) => {
+            const ok = r.review[i].yours === r.review[i].answer;
+            return `<div class="pub-rev ${ok ? "ok" : "ko"}"><b>${ok ? "✅" : "❌"} ${i + 1}. ${esc(q.q)}</b>
+              ${ok ? "" : `<div class="small">Tu respuesta: ${esc(q.options[r.review[i].yours])}</div>`}
+              <div class="small">Correcta: <b>${esc(q.options[r.review[i].answer])}</b></div></div>`;
+          })
+          .join("")}`);
+    } catch (err) {
+      fail(err);
+    }
+  };
+}
+
+async function renderPublicEval(token) {
+  let d;
+  try {
+    d = await api(`/p/eval/${token}`);
+  } catch (e) {
+    return pubErr(e);
+  }
+  if (!d.open) return publicShell(`<div class="empty"><div style="font-size:48px">🔒</div><h3>${esc(d.title)}</h3><p>Esta evaluación está cerrada.</p></div>`);
+  const peer = d.mode === "peer";
+  const draw = (me = "") => {
+    const doneBy = new Set(d.done.filter((x) => x.evaluator_id === me).map((x) => x.target_id));
+    publicShell(`<div class="pub-head"><small>${esc(d.group)}</small><h2>${peer ? "🤝 Coevaluación" : "🪞 Autoevaluación"}</h2><p><b>${esc(d.title)}</b><br><span class="muted">📐 ${esc(d.rubric.title)}</span></p></div>
+      <label>¿Quién eres?<select id="me"><option value="">— Elige tu nombre —</option>${d.students
+        .map((s) => `<option value="${s.id}" ${s.id === me ? "selected" : ""}>${esc(s.last_name)}, ${esc(s.first_name)}</option>`)
+        .join("")}</select></label>
+      ${
+        peer
+          ? `<label>¿A quién evalúas?<select id="target"><option value="">— Elige a tu compañero/a —</option>${d.students
+              .filter((s) => s.id !== me)
+              .map((s) => `<option value="${s.id}">${esc(s.last_name)}, ${esc(s.first_name)}${doneBy.has(s.id) ? " ✓ (ya lo evaluaste)" : ""}</option>`)
+              .join("")}</select></label>`
+          : ""
+      }
+      <form id="ef">${d.rubric.criteria
+        .map(
+          (c, i) => `<fieldset class="pub-q"><legend><span class="qnum">${i + 1}</span> ${esc(c.name)}</legend>
+            ${c.levels
+              .map(
+                (l, j) => `<label class="pub-opt"><input type="radio" name="c${i}" value="${j}" required>
+                  <span><b>${esc(l.label)}</b>${l.descriptor ? `<br><small class="muted">${esc(l.descriptor)}</small>` : ""}</span></label>`,
+              )
+              .join("")}</fieldset>`,
+        )
+        .join("")}
+        <label>Comentario (opcional)<textarea name="comment" rows="3" placeholder="${peer ? "¿Qué hizo bien? ¿Qué puede mejorar?" : "¿Qué aprendiste? ¿Qué mejorarías?"}"></textarea></label>
+        <button class="primary big" type="submit" style="width:100%">Enviar evaluación</button></form>`);
+    $("#me").onchange = (e) => draw(e.target.value);
+    $("#ef").onsubmit = async (e) => {
+      e.preventDefault();
+      const evaluator_id = $("#me").value;
+      const target_id = peer ? $("#target").value : evaluator_id;
+      if (!evaluator_id) return toast("Elige tu nombre", true);
+      if (!target_id) return toast("Elige a quién evalúas", true);
+      const fd = new FormData(e.target);
+      const levels = d.rubric.criteria.map((_, i) => Number(fd.get(`c${i}`)));
+      try {
+        await api(`/p/eval/${token}`, { method: "POST", body: { evaluator_id, target_id, levels, comment: fd.get("comment") } });
+        d.done = d.done.filter((x) => !(x.evaluator_id === evaluator_id && x.target_id === target_id)).concat({ evaluator_id, target_id });
+        publicShell(`<div class="pub-result"><div class="big-face">🙌</div><h2>¡Gracias!</h2><p>Tu evaluación se guardó.</p>
+          ${peer ? `<button class="primary big" id="again">🤝 Evaluar a otro compañero</button>` : ""}</div>`);
+        $("#again") && ($("#again").onclick = () => draw(evaluator_id));
+      } catch (err) {
+        fail(err);
+      }
+    };
+  };
+  draw();
 }
 
 // ───────── Rúbricas ─────────
